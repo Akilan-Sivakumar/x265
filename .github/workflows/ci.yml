@@ -2855,60 +2855,125 @@ jobs:
       contents: read
     env:
       ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
+
     steps:
-      - name: "Download smoke assets from shared OneDrive folder"
+      # ============================================================
+      # STEP 1: Download smoke-test assets
+      # ============================================================
+      - name: "Download smoke-test assets"
         if: github.event_name == 'pull_request_target'
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p assets
+
+          mkdir -p assets/smoke
+
           download_asset() {
-            local filename=$1
+            local filename="$1"
+
             echo "=== Downloading $filename ==="
-            curl -sfL "${ONEDRIVE_SHARE_URL}&download=1&files=${filename}" -o "assets/$filename"
-            echo "[OK] $filename downloaded"
+
+            curl \
+              --fail \
+              --location \
+              --retry 5 \
+              --retry-delay 5 \
+              --retry-all-errors \
+              --progress-bar \
+              "${ONEDRIVE_SHARE_URL}&download=1&files=${filename}" \
+              -o "assets/smoke/${filename}"
+
+            test -s "assets/smoke/${filename}"
+
+            echo "[OK] $filename downloaded: $(du -h "assets/smoke/${filename}" | cut -f1)"
           }
+
           download_asset "videos.tar.gz"
           download_asset "goldens-linux.tar.gz"
           download_asset "goldens-windows.tar.gz"
           download_asset "decoders-linux.tar.gz"
           download_asset "decoders-windows.tar.gz"
           download_asset "conf.tar.gz"
-          download_asset "smoke-tests.tar.gz"
+          download_asset "smoke-test.tar.gz"
+
+          echo
+          echo "=== Smoke assets ==="
+          ls -lh assets/smoke/
 
       - name: "Upload smoke assets artifact"
         if: github.event_name == 'pull_request_target'
         uses: actions/upload-artifact@v7
         with:
           name: smoke-assets
-          path: assets/*.tar.gz
+          path: assets/smoke/*.tar.gz
           retention-days: 1
 
-      - name: "Download sanitizer_videos.tar.gz from shared OneDrive folder"
+
+      # ============================================================
+      # STEP 2: Download sanitizer videos
+      # ============================================================
+      - name: "Download sanitizer videos"
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p assets
-          curl -sfL "${ONEDRIVE_SHARE_URL}&download=1&files=sanitizer_videos.tar.gz" -o assets/sanitizer_videos.tar.gz
-          echo "[OK] sanitizer_videos.tar.gz downloaded: $(du -h assets/sanitizer_videos.tar.gz)"
+
+          mkdir -p assets/sanitizer
+
+          echo "=== Downloading sanitizer_videos.tar.gz ==="
+
+          curl \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --progress-bar \
+            "${ONEDRIVE_SHARE_URL}&download=1&files=sanitizer_videos.tar.gz" \
+            -o assets/sanitizer/sanitizer_videos.tar.gz
+
+          test -s assets/sanitizer/sanitizer_videos.tar.gz
+
+          echo "[OK] sanitizer_videos.tar.gz downloaded: $(du -h assets/sanitizer/sanitizer_videos.tar.gz | cut -f1)"
 
       - name: "Upload sanitizer videos artifact"
         uses: actions/upload-artifact@v7
         with:
-          name: xiph-videos-${{ github.run_id }}
-          path: assets/sanitizer_videos.tar.gz
+          name: sanitizer-videos-${{ github.run_id }}
+          path: assets/sanitizer/sanitizer_videos.tar.gz
           retention-days: 1
 
-      - name: "Download xiph_videos.tar.gz from shared OneDrive folder"
+
+      # ============================================================
+      # STEP 3: Download Xiph videos
+      # ============================================================
+      - name: "Download xiph videos"
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p assets
-          curl -sfL "${ONEDRIVE_SHARE_URL}&download=1&files=xiph_videos.tar.gz" -o assets/xiph_videos.tar.gz
-          echo "[OK] xiph_videos.tar.gz downloaded: $(du -h assets/xiph_videos.tar.gz)"
+
+          mkdir -p assets/xiph
+
+          echo "=== Downloading xiph_videos.tar.gz ==="
+
+          curl \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --progress-bar \
+            "${ONEDRIVE_SHARE_URL}&download=1&files=xiph_videos.tar.gz" \
+            -o assets/xiph/xiph_videos.tar.gz
+
+          test -s assets/xiph/xiph_videos.tar.gz
+
+          echo "[OK] xiph_videos.tar.gz downloaded: $(du -h assets/xiph/xiph_videos.tar.gz | cut -f1)"
 
       - name: "Upload xiph videos artifact"
         uses: actions/upload-artifact@v7
         with:
           name: xiph-videos-${{ github.run_id }}
-          path: assets/xiph_videos.tar.gz
+          path: assets/xiph/xiph_videos.tar.gz
           retention-days: 1
 
   build-tsan:
