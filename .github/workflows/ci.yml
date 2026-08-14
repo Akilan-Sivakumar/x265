@@ -2887,8 +2887,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p assets
-          curl -sfL "${ONEDRIVE_SHARE_URL}&download=1&files=sanitizer_videos.tar.gz" -o assets/sanitizer_videos.tar.gz
-          echo "[OK] sanitizer_videos.tar.gz downloaded: $(du -h assets/sanitizer_videos.tar.gz)"
+
+          curl -fL "${ONEDRIVE_SHARE_URL}&download=1" \
+            -o assets/sanitizer_videos.tar.gz
+      
+          echo "[OK] Downloaded:"
+          ls -lh assets/sanitizer_videos.tar.gz
+      
+          echo "[INFO] Contents:"
+          tar -tzf assets/sanitizer_videos.tar.gz
 
       - name: "Upload sanitizer videos artifact"
         uses: actions/upload-artifact@v7
