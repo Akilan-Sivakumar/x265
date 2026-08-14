@@ -2853,8 +2853,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-    env:
-      ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
 
     steps:
       # ============================================================
@@ -2870,6 +2868,7 @@ jobs:
 
           download_asset() {
             local filename="$1"
+            local url="$2"
 
             echo "=== Downloading $filename ==="
 
@@ -2880,7 +2879,7 @@ jobs:
               --retry-delay 5 \
               --retry-all-errors \
               --progress-bar \
-              "${ONEDRIVE_SHARE_URL}&download=1&files=${filename}" \
+              "${url}&download=1" \
               -o "assets/smoke/${filename}"
 
             test -s "assets/smoke/${filename}"
@@ -2888,13 +2887,33 @@ jobs:
             echo "[OK] $filename downloaded: $(du -h "assets/smoke/${filename}" | cut -f1)"
           }
 
-          download_asset "videos.tar.gz"
-          download_asset "goldens-linux.tar.gz"
-          download_asset "goldens-windows.tar.gz"
-          download_asset "decoders-linux.tar.gz"
-          download_asset "decoders-windows.tar.gz"
-          download_asset "conf.tar.gz"
-          download_asset "smoke-test.tar.gz"
+          download_asset \
+            "videos.tar" \
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQBq7ogKnEkYT4bUFIYKzmYZAT_yz-Gz28wNag7ksDnQdkk?e=yBazh5"
+
+          download_asset \
+            "goldens-linux.tar" \
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQDzpYt5b3wOQ6vDOlWTJeYOAf03NtuTiRWuou0LpuUgy9U?e=rV8Ehe"
+
+          download_asset \
+            "goldens-windows.tar" \
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQDES1ha86-xTZo1BOuIoCZnAQGrZuXJ_zFYo5J5IHiMiMo?e=sOS1qD"
+
+          download_asset \
+            "decoders-linux.tar" \
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQBHr8pDhqXuSKh-L4gVt6iqAe6rBVkl67gtjCyvie9YXaI?e=nmZvlo"
+
+          download_asset \
+            "decoders-windows.tar" \
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQD5jCkZ8h9aSZxiBSdok3aqATrs8t_SWZPJpgHTJxAgpCM?e=dE20Ju"
+
+          download_asset \
+            "conf.tar" \
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQAZFB4e_CidQpeRSVjGn-53ATZeW6XniRCstgAHfcs71po?e=Q9fbeS"
+
+          download_asset \
+            "smoke-tests.tar" \
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQDHYeeqQx_uQa7BWQlkjpm8AdeXwzndPPF2xmbwE7h5fBw?e=aYznMv"
 
           echo
           echo "=== Smoke assets ==="
@@ -2905,7 +2924,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: smoke-assets
-          path: assets/smoke/*.tar.gz
+          path: assets/smoke/*.tar
           retention-days: 1
 
 
@@ -2919,7 +2938,7 @@ jobs:
 
           mkdir -p assets/sanitizer
 
-          echo "=== Downloading sanitizer_videos.tar.gz ==="
+          echo "=== Downloading sanitizer_videos.tar ==="
 
           curl \
             --fail \
@@ -2928,18 +2947,18 @@ jobs:
             --retry-delay 5 \
             --retry-all-errors \
             --progress-bar \
-            "${ONEDRIVE_SHARE_URL}&download=1&files=sanitizer_videos.tar.gz" \
-            -o assets/sanitizer/sanitizer_videos.tar.gz
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQBsbPWY-FY3QYxc9keJB_IVAfepS-1eUZQ8h3v0HkaYXHc?e=2ZQhDL&download=1" \
+            -o assets/sanitizer/sanitizer_videos.tar
 
-          test -s assets/sanitizer/sanitizer_videos.tar.gz
+          test -s assets/sanitizer/sanitizer_videos.tar
 
-          echo "[OK] sanitizer_videos.tar.gz downloaded: $(du -h assets/sanitizer/sanitizer_videos.tar.gz | cut -f1)"
+          echo "[OK] sanitizer_videos.tar downloaded: $(du -h assets/sanitizer/sanitizer_videos.tar | cut -f1)"
 
       - name: "Upload sanitizer videos artifact"
         uses: actions/upload-artifact@v7
         with:
           name: sanitizer-videos-${{ github.run_id }}
-          path: assets/sanitizer/sanitizer_videos.tar.gz
+          path: assets/sanitizer/sanitizer_videos.tar
           retention-days: 1
 
 
@@ -2953,7 +2972,7 @@ jobs:
 
           mkdir -p assets/xiph
 
-          echo "=== Downloading xiph_videos.tar.gz ==="
+          echo "=== Downloading xiph_videos.tar ==="
 
           curl \
             --fail \
@@ -2962,20 +2981,20 @@ jobs:
             --retry-delay 5 \
             --retry-all-errors \
             --progress-bar \
-            "${ONEDRIVE_SHARE_URL}&download=1&files=xiph_videos.tar.gz" \
-            -o assets/xiph/xiph_videos.tar.gz
+            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQDVRRVfvc9sTanX29lAA1MtAenZmnGX29nit_67lP9oa3g?e=5bASnl&download=1" \
+            -o assets/xiph/xiph_videos.tar
 
-          test -s assets/xiph/xiph_videos.tar.gz
+          test -s assets/xiph/xiph_videos.tar
 
-          echo "[OK] xiph_videos.tar.gz downloaded: $(du -h assets/xiph/xiph_videos.tar.gz | cut -f1)"
+          echo "[OK] xiph_videos.tar downloaded: $(du -h assets/xiph/xiph_videos.tar | cut -f1)"
 
       - name: "Upload xiph videos artifact"
         uses: actions/upload-artifact@v7
         with:
           name: xiph-videos-${{ github.run_id }}
-          path: assets/xiph/xiph_videos.tar.gz
+          path: assets/xiph/xiph_videos.tar
           retention-days: 1
-
+          
   build-tsan:
     name: "Build TSAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
