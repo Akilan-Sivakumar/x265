@@ -2938,27 +2938,33 @@ jobs:
       
           mkdir -p assets/sanitizer
       
-          URL='https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQBsbPWY-FY3QYxc9keJB_IVAfepS-1eUZQ8h3v0HkaYXHc?e=2ZQhDL&download=1'
+          URL='https://multicorewareinc1-my.sharepoint.com/personal/x265tests_multicorewareinc_com/_layouts/15/download.aspx?SourceUrl=%2Fpersonal%2Fx265tests%5Fmulticorewareinc%5Fcom%2FDocuments%2Fx265%2Dci%2Dpipeline%2Dassets%2Fsanitizer%5Fvideos%2Etar%2Egz'
       
-          echo "=== Downloading sanitizer_videos.tar ==="
+          echo "=== Downloading sanitizer_videos.tar.gz ==="
       
           curl \
-            --location \
             --fail \
+            --location \
             --retry 5 \
             --retry-delay 5 \
             --retry-all-errors \
-            --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36" \
-            --output assets/sanitizer/sanitizer_videos.tar \
-            "$URL"
+            --progress-bar \
+            "$URL" \
+            -o assets/sanitizer/sanitizer_videos.tar.gz
       
-          test -s assets/sanitizer/sanitizer_videos.tar
+          echo "=== Validating file ==="
       
-          echo "[OK] Downloaded:"
-          ls -lh assets/sanitizer/sanitizer_videos.tar
+          test -s assets/sanitizer/sanitizer_videos.tar.gz
       
-          echo "File type:"
-          file assets/sanitizer/sanitizer_videos.tar
+          file assets/sanitizer/sanitizer_videos.tar.gz
+      
+          if ! file assets/sanitizer/sanitizer_videos.tar.gz | grep -qiE 'gzip compressed data'; then
+            echo "::error::Downloaded file is not a gzip archive"
+            exit 1
+          fi
+      
+          echo "[OK] sanitizer_videos.tar.gz downloaded:"
+          ls -lh assets/sanitizer/sanitizer_videos.tar.gz
 
       - name: "Upload sanitizer videos artifact"
         uses: actions/upload-artifact@v7
