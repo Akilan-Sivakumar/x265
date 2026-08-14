@@ -2935,24 +2935,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
+      
           mkdir -p assets/sanitizer
-
+      
+          URL='https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQBsbPWY-FY3QYxc9keJB_IVAfepS-1eUZQ8h3v0HkaYXHc?e=2ZQhDL&download=1'
+      
           echo "=== Downloading sanitizer_videos.tar ==="
-
+      
           curl \
-            --fail \
             --location \
+            --fail \
             --retry 5 \
             --retry-delay 5 \
             --retry-all-errors \
-            --progress-bar \
-            "https://multicorewareinc1-my.sharepoint.com/:u:/g/personal/x265tests_multicorewareinc_com/IQBsbPWY-FY3QYxc9keJB_IVAfepS-1eUZQ8h3v0HkaYXHc?e=2ZQhDL&download=1" \
-            -o assets/sanitizer/sanitizer_videos.tar
-
+            --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36" \
+            --output assets/sanitizer/sanitizer_videos.tar \
+            "$URL"
+      
           test -s assets/sanitizer/sanitizer_videos.tar
-
-          echo "[OK] sanitizer_videos.tar downloaded: $(du -h assets/sanitizer/sanitizer_videos.tar | cut -f1)"
+      
+          echo "[OK] Downloaded:"
+          ls -lh assets/sanitizer/sanitizer_videos.tar
+      
+          echo "File type:"
+          file assets/sanitizer/sanitizer_videos.tar
 
       - name: "Upload sanitizer videos artifact"
         uses: actions/upload-artifact@v7
