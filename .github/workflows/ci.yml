@@ -2850,11 +2850,33 @@ jobs:
   # on failure to see what the page looked like, then update the
   # `candidates` selector list in download.js accordingly.
   prep-assets:
-    name: "Prepare Assets"
+    name: "Prepare Assets (${{ matrix.asset.name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
+    if: |
+      matrix.asset.name == 'sanitizer' || matrix.asset.name == 'xiph' ||
+      (matrix.asset.name == 'smoke' && github.event_name == 'pull_request_target')
+    strategy:
+      fail-fast: false
+      matrix:
+        asset:
+          - name: smoke
+            download_dir: download-smoke
+            file_names: "conf.tar.gz,decoders-linux.tar.gz,decoders-windows.tar.gz,goldens-linux.tar.gz,goldens-windows.tar.gz,smoke-tests.tar.gz,videos.tar.gz"
+            output_glob: "assets/*.tar.gz"
+            artifact_name: smoke-assets
+          - name: sanitizer
+            download_dir: download-sanitizer
+            file_names: "sanitizer_videos.tar.gz"
+            output_glob: "sanitizer_videos.tar.gz"
+            artifact_name: sanitizer-videos-${{ github.run_id }}
+          - name: xiph
+            download_dir: download-xiph
+            file_names: "xiph_videos.tar.gz"
+            output_glob: "xiph_videos.tar.gz"
+            artifact_name: xiph-videos-${{ github.run_id }}
     env:
       FOLDER_URL: "https://multicorewareinc1-my.sharepoint.com/:f:/g/personal/akilan_sivakumar_multicorewareinc_com/IgBIozjxhXPyS4m77U_vqmjUAZxi13BueDQjvEcy4IpbbZM?e=bbWPuf"
     steps:
@@ -2902,9 +2924,6 @@ jobs:
 
               await row.hover();
 
-              // Select the row. Prefer keyboard (focus + Space) since it avoids the
-              // pointer-interception issues that plague the checkbox overlay; fall
-              // back to a forced click if keyboard selection doesn't stick.
               const checkbox = row.getByRole('checkbox').first();
               await checkbox.focus();
               await page.keyboard.press('Space');
@@ -2951,14 +2970,12 @@ jobs:
               const rawPath = `${downloadDir}/__raw__${fileName}`;
               await download.saveAs(rawPath);
 
-              // Inspect magic bytes to see what we actually got, regardless of
-              // suggestedFilename or the name we expected.
               const fd = fs.openSync(rawPath, 'r');
               const header = Buffer.alloc(4);
               fs.readSync(fd, header, 0, 4, 0);
               fs.closeSync(fd);
 
-              const isZip = header[0] === 0x50 && header[1] === 0x4b; // "PK"
+              const isZip = header[0] === 0x50 && header[1] === 0x4b;
               const isGzip = header[0] === 0x1f && header[1] === 0x8b;
 
               const finalPath = `${downloadDir}/${fileName}`;
@@ -3009,95 +3026,50 @@ jobs:
           })();
           EOF
 
-      - name: "Download smoke assets"
-        if: github.event_name == 'pull_request_target'
+      - name: "Download ${{ matrix.asset.name }} assets"
         env:
-          DOWNLOAD_DIR: download-smoke
-          FILE_NAMES: "conf.tar.gz,decoders-linux.tar.gz,decoders-windows.tar.gz,goldens-linux.tar.gz,goldens-windows.tar.gz,smoke-tests.tar.gz,videos.tar.gz"
+          DOWNLOAD_DIR: ${{ matrix.asset.download_dir }}
+          FILE_NAMES: ${{ matrix.asset.file_names }}
         run: |
           set -euo pipefail
           mkdir -p assets
           node download.js
+
           echo "=== Validating archive integrity ==="
-          for f in download-smoke/*.tar.gz; do
+          for f in ${{ matrix.asset.download_dir }}/*.tar.gz; do
             gzip -t "$f"
           done
-          mv download-smoke/*.tar.gz assets/
-          echo "=== Final smoke assets ==="
-          ls -lh assets/
 
-      - name: "Download sanitizer video bundle"
-        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
-        env:
-          DOWNLOAD_DIR: download-sanitizer
-          FILE_NAMES: "sanitizer_videos.tar.gz"
-        run: |
-          set -euo pipefail
-          node download.js
-          echo "=== Validating archive integrity ==="
-          gzip -t download-sanitizer/sanitizer_videos.tar.gz
-          mv download-sanitizer/sanitizer_videos.tar.gz sanitizer_videos.tar.gz
-          ls -lh sanitizer_videos.tar.gz
-
-      - name: "Download xiph video bundle"
-        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
-        env:
-          DOWNLOAD_DIR: download-xiph
-          FILE_NAMES: "xiph_videos.tar.gz"
-        run: |
-          set -euo pipefail
-          node download.js
-          echo "=== Validating archive integrity ==="
-          gzip -t download-xiph/xiph_videos.tar.gz
-          mv download-xiph/xiph_videos.tar.gz xiph_videos.tar.gz
-          ls -lh xiph_videos.tar.gz
+          if [ "${{ matrix.asset.name }}" = "smoke" ]; then
+            mv ${{ matrix.asset.download_dir }}/*.tar.gz assets/
+            echo "=== Final smoke assets ==="
+            ls -lh assets/
+          else
+            mv ${{ matrix.asset.download_dir }}/*.tar.gz .
+            ls -lh *.tar.gz
+          fi
 
       - name: "Upload debug artifacts (on failure)"
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: debug-page-dump
+          name: debug-page-dump-${{ matrix.asset.name }}
           path: |
-            download-smoke/*.html
-            download-smoke/*.png
-            download-smoke/*.tar.gz
-            download-sanitizer/*.html
-            download-sanitizer/*.png
-            download-sanitizer/*.tar.gz
-            download-xiph/*.html
-            download-xiph/*.png
-            download-xiph/*.tar.gz
+            ${{ matrix.asset.download_dir }}/*.html
+            ${{ matrix.asset.download_dir }}/*.png
+            ${{ matrix.asset.download_dir }}/*.tar.gz
           retention-days: 1
           if-no-files-found: ignore
 
-      - name: "Upload smoke assets artifact"
-        if: github.event_name == 'pull_request_target'
+      - name: "Upload ${{ matrix.asset.name }} artifact"
         uses: actions/upload-artifact@v7
         with:
-          name: smoke-assets
-          path: assets/*.tar.gz
-          retention-days: 1
-
-      - name: "Upload sanitizer video bundle artifact"
-        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
-        uses: actions/upload-artifact@v7
-        with:
-          name: sanitizer-videos-${{ github.run_id }}
-          path: sanitizer_videos.tar.gz
+          name: ${{ matrix.asset.artifact_name }}
+          path: ${{ matrix.asset.output_glob }}
           retention-days: 1
           compression-level: 0
           overwrite: true
 
-      - name: "Upload xiph video bundle artifact"
-        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
-        uses: actions/upload-artifact@v7
-        with:
-          name: xiph-videos-${{ github.run_id }}
-          path: xiph_videos.tar.gz
-          retention-days: 1
-          compression-level: 0
-          overwrite: true
-          
   build-tsan:
     name: "Build TSAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
