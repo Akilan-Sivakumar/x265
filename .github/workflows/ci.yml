@@ -2855,9 +2855,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-    if: |
-      matrix.asset.name == 'sanitizer' || matrix.asset.name == 'xiph' ||
-      (matrix.asset.name == 'smoke' && github.event_name == 'pull_request_target')
     strategy:
       fail-fast: false
       matrix:
@@ -2880,17 +2877,29 @@ jobs:
     env:
       FOLDER_URL: "https://multicorewareinc1-my.sharepoint.com/:f:/g/personal/akilan_sivakumar_multicorewareinc_com/IgBIozjxhXPyS4m77U_vqmjUAZxi13BueDQjvEcy4IpbbZM?e=bbWPuf"
     steps:
+      - name: "Check whether this asset should run"
+        id: gate
+        run: |
+          if [ "${{ matrix.asset.name }}" = "smoke" ] && [ "${{ github.event_name }}" != "pull_request_target" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v5
+        if: steps.gate.outputs.run == 'true'
         with:
           node-version: '24'
 
       - name: "Install Playwright"
+        if: steps.gate.outputs.run == 'true'
         run: |
           npm init -y
           npm install playwright
           npx playwright install --with-deps chromium
 
       - name: "Prepare download script"
+        if: steps.gate.outputs.run == 'true'
         run: |
           cat > download.js << 'EOF'
           const { chromium } = require('playwright');
@@ -3027,6 +3036,7 @@ jobs:
           EOF
 
       - name: "Download ${{ matrix.asset.name }} assets"
+        if: steps.gate.outputs.run == 'true'
         env:
           DOWNLOAD_DIR: ${{ matrix.asset.download_dir }}
           FILE_NAMES: ${{ matrix.asset.file_names }}
@@ -3050,7 +3060,7 @@ jobs:
           fi
 
       - name: "Upload debug artifacts (on failure)"
-        if: failure()
+        if: failure() && steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: debug-page-dump-${{ matrix.asset.name }}
@@ -3062,6 +3072,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: "Upload ${{ matrix.asset.name }} artifact"
+        if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset.artifact_name }}
@@ -3069,7 +3080,7 @@ jobs:
           retention-days: 1
           compression-level: 0
           overwrite: true
-
+        
   build-tsan:
     name: "Build TSAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
