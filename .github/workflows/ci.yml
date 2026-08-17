@@ -2851,45 +2851,66 @@ jobs:
     name: "Prepare Assets"
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event_name == 'pull_request_target'
     permissions:
       contents: read
-      id-token: write   # required to mint the OIDC token; scoped to this job only
     steps:
-      - name: Azure login (OIDC)
-        uses: azure/login@v3.0.1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true   # this app has no Azure subscription, just Graph access
+      - name: "Resolve OneDrive share and list contents (dry-run)"
+        id: resolve-share
+        env:
+          ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
+        run: |
+          set -euo pipefail
+
+          # Encode the "Anyone with the link" share URL into the
+          # Graph API's expected shareId format: u!<base64url>
+          ENCODED=$(printf '%s' "$ONEDRIVE_SHARE_URL" | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          SHARE_ID="u!${ENCODED}"
+          echo "share_id=${SHARE_ID}" >> "$GITHUB_OUTPUT"
+
+          echo "=== Listing shared folder contents ==="
+          HTTP_CODE=$(curl -sS -o children.json -w "%{http_code}" \
+            "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/children")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Graph API returned HTTP ${HTTP_CODE} — link may not be anonymous-accessible, or tenant blocks anonymous Graph resolution."
+            cat children.json
+            exit 1
+          fi
+
+          echo "=== Files found in shared folder ==="
+          jq -r '.value[] | "\(.name)\t\(.size) bytes"' children.json
 
       - name: "Download smoke assets"
         env:
-          ONEDRIVE_USER: ${{ secrets.ONEDRIVE_USER }}
-          ONEDRIVE_FILE_PATH: ${{ secrets.ONEDRIVE_FILE_PATH }}
+          ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
         run: |
           set -euo pipefail
           mkdir -p assets
-          TOKEN=$(az account get-access-token --resource https://graph.microsoft.com --query accessToken -o tsv)
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Failed to obtain Graph API token"
-            exit 1
-          fi
+
+          SHARE_ID="${{ steps.resolve-share.outputs.share_id }}"
+
+          children_json=$(curl -sfL "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/children")
+
           download_asset() {
             local filename=$1
+            local dest=$2
             echo "=== Downloading $filename ==="
-            curl -sfL -H "Authorization: Bearer ${TOKEN}" \
-              "https://graph.microsoft.com/v1.0/users/${ONEDRIVE_USER}/drive/root:/${ONEDRIVE_FILE_PATH}/${filename}:/content" \
-              -o "assets/$filename"
-            echo "[OK] $filename downloaded"
+            local download_url
+            download_url=$(echo "$children_json" | jq -r --arg name "$filename" \
+              '.value[] | select(.name == $name) | .["@microsoft.graph.downloadUrl"]')
+            if [ -z "$download_url" ] || [ "$download_url" == "null" ]; then
+              echo "::error::Could not find download URL for $filename"
+              exit 1
+            fi
+            curl -sfL "$download_url" -o "$dest"
+            echo "[OK] $filename downloaded ($(du -h "$dest" | cut -f1))"
           }
-          download_asset "videos.tar.gz"
-          download_asset "goldens-linux.tar.gz"
-          download_asset "goldens-windows.tar.gz"
-          download_asset "decoders-linux.tar.gz"
-          download_asset "decoders-windows.tar.gz"
-          download_asset "conf.tar.gz"
-          download_asset "smoke-tests.tar.gz"
+
+          for f in videos.tar.gz goldens-linux.tar.gz goldens-windows.tar.gz \
+                   decoders-linux.tar.gz decoders-windows.tar.gz \
+                   conf.tar.gz smoke-tests.tar.gz; do
+            download_asset "$f" "assets/$f"
+          done
 
       - name: "Upload smoke assets artifact"
         uses: actions/upload-artifact@v7
@@ -2900,19 +2921,24 @@ jobs:
 
       - name: "Download sanitizer video bundle"
         env:
-          ONEDRIVE_USER: ${{ secrets.ONEDRIVE_USER }}
-          ONEDRIVE_FILE_PATH: ${{ secrets.ONEDRIVE_FILE_PATH }}
+          ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
         run: |
           set -euo pipefail
-          TOKEN=$(az account get-access-token --resource https://graph.microsoft.com --query accessToken -o tsv)
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Failed to obtain Graph API token"
+
+          SHARE_ID="${{ steps.resolve-share.outputs.share_id }}"
+
+          children_json=$(curl -sfL "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/children")
+
+          download_url=$(echo "$children_json" | jq -r \
+            '.value[] | select(.name == "sanitizer_videos.tar.gz") | .["@microsoft.graph.downloadUrl"]')
+
+          if [ -z "$download_url" ] || [ "$download_url" == "null" ]; then
+            echo "::error::Could not find download URL for sanitizer_videos.tar.gz"
             exit 1
           fi
+
           echo "=== Downloading sanitizer_videos.tar.gz ==="
-          curl -sfL -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${ONEDRIVE_USER}/drive/root:/${ONEDRIVE_FILE_PATH}/sanitizer_videos.tar.gz:/content" \
-            -o sanitizer_videos.tar.gz
+          curl -sfL "$download_url" -o sanitizer_videos.tar.gz
           echo "[OK] bundle fetched: $(du -h sanitizer_videos.tar.gz)"
 
       - name: "Upload sanitizer video bundle artifact"
