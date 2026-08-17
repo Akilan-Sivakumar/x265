@@ -1374,7 +1374,7 @@ jobs:
     name: "Test Linux (${{ matrix.category }})"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
-    needs: build-linux
+    needs: [build-linux, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -1432,18 +1432,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -1761,7 +1760,7 @@ jobs:
     name: "Test macOS (${{ matrix.category }})"
     runs-on: macos-latest
     timeout-minutes: 60
-    needs: build-macos
+    needs: [build-macos, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -1806,18 +1805,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -2120,7 +2118,7 @@ jobs:
     name: "Test AArch64 (${{ matrix.category }}, QEMU)"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    needs: build-aarch64
+    needs: [build-aarch64, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -2185,18 +2183,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -2499,7 +2496,7 @@ jobs:
     name: "Test Windows (${{ matrix.category }})"
     runs-on: windows-latest
     timeout-minutes: 60
-    needs: build-windows
+    needs: [build-windows, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -2542,18 +2539,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          curl -sSL --retry 3 --max-time 60 -o testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          curl -sSL --retry 3 --max-time 60 -o testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -2847,88 +2843,321 @@ jobs:
           path: summaries/*.log
           retention-days: 3
 
+  # NOTE: Primary download method hits SharePoint's download.aspx endpoint
+  # directly (built from FOLDER_URL + filename), avoiding UI scraping.
+  # If SharePoint tenant behavior changes and direct URLs stop working,
+  # the script automatically falls back to clicking through the folder's
+  # web UI. If BOTH fail, check the "debug-page-dump-*" artifact (HTML +
+  # screenshot) uploaded on failure to see what went wrong.
   prep-assets:
-    name: "Prepare Assets"
+    name: "Prepare Assets (${{ matrix.asset.name }})"
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event_name == 'pull_request_target'
     permissions:
       contents: read
-      id-token: write   # required to mint the OIDC token; scoped to this job only
+    strategy:
+      fail-fast: false
+      matrix:
+        asset:
+          - name: smoke
+            download_dir: download-smoke
+            file_names: "conf.tar.gz,decoders-linux.tar.gz,decoders-windows.tar.gz,goldens-linux.tar.gz,goldens-windows.tar.gz,smoke-tests.tar.gz,videos.tar.gz"
+            output_glob: "assets/*.tar.gz"
+            artifact_name: smoke-assets
+          - name: sanitizer
+            download_dir: download-sanitizer
+            file_names: "sanitizer_videos.tar.gz"
+            output_glob: "sanitizer_videos.tar.gz"
+            artifact_name: sanitizer-videos-${{ github.run_id }}
+          - name: xiph
+            download_dir: download-xiph
+            file_names: "xiph_videos.tar.gz"
+            output_glob: "xiph_videos.tar.gz"
+            artifact_name: xiph-videos-${{ github.run_id }}
+    env:
+      FOLDER_URL: "https://multicorewareinc1-my.sharepoint.com/:f:/g/personal/akilan_sivakumar_multicorewareinc_com/IgBIozjxhXPyS4m77U_vqmjUAZxi13BueDQjvEcy4IpbbZM?e=bbWPuf"
+      SITE_BASE: "https://multicorewareinc1-my.sharepoint.com"
+      LIBRARY_PATH: "/personal/akilan_sivakumar_multicorewareinc_com/Documents/x265-ci-pipeline-assets"
     steps:
-      - name: Azure login (OIDC)
-        uses: azure/login@v3.0.1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true   # this app has no Azure subscription, just Graph access
+      - name: "Check whether this asset should run"
+        id: gate
+        run: |
+          if [ "${{ matrix.asset.name }}" = "smoke" ] && [ "${{ github.event_name }}" != "pull_request_target" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: "Download smoke assets"
+      - uses: actions/setup-node@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: '24'
+
+      - name: "Install Playwright"
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: "Prepare download script"
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          cat > download.js << 'EOF'
+          const { chromium } = require('playwright');
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+
+          function buildDirectUrl(fileName) {
+            const sourceUrl = `${process.env.LIBRARY_PATH}/${fileName}`;
+            return `${process.env.SITE_BASE}${process.env.LIBRARY_PATH.split('/Documents')[0]}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(sourceUrl)}`;
+          }
+
+          function inspectAndFinalize(rawPath, finalPath, fileName, downloadDir) {
+            const fd = fs.openSync(rawPath, 'r');
+            const header = Buffer.alloc(4);
+            fs.readSync(fd, header, 0, 4, 0);
+            fs.closeSync(fd);
+
+            const isZip = header[0] === 0x50 && header[1] === 0x4b;
+            const isGzip = header[0] === 0x1f && header[1] === 0x8b;
+
+            if (fileName.endsWith('.tar.gz') && isZip) {
+              console.log(`=== ${fileName} arrived as a zip wrapper, unwrapping ===`);
+              const unzipDir = `${downloadDir}/__unzipped__${fileName}`;
+              execSync(`unzip -o "${rawPath}" -d "${unzipDir}"`);
+              const inner = execSync(`find "${unzipDir}" -type f -name "*.tar.gz" | head -n1`).toString().trim();
+              if (!inner) {
+                throw new Error(`Unwrapped zip for ${fileName} but found no .tar.gz inside`);
+              }
+              fs.renameSync(inner, finalPath);
+              fs.rmSync(rawPath, { force: true });
+              fs.rmSync(unzipDir, { recursive: true, force: true });
+              return true;
+            }
+
+            if (fileName.endsWith('.tar.gz') && !isGzip) {
+              return false; // caller decides whether to fall back or throw
+            }
+
+            fs.renameSync(rawPath, finalPath);
+            return true;
+          }
+
+          async function tryDirectDownload(page, fileName, downloadDir) {
+            const url = buildDirectUrl(fileName);
+            console.log(`=== [direct] Attempting: ${fileName} ===`);
+            console.log(`    ${url}`);
+
+            const [download] = await Promise.all([
+              page.waitForEvent('download', { timeout: 60000 }).catch(() => null),
+              page.goto(url, { timeout: 60000 }).catch(() => {}),
+            ]);
+
+            if (!download) {
+              console.log(`=== [direct] No download event fired for ${fileName} ===`);
+              return false;
+            }
+
+            fs.mkdirSync(downloadDir, { recursive: true });
+            const rawPath = `${downloadDir}/__raw__${fileName}`;
+            await download.saveAs(rawPath);
+
+            const finalPath = `${downloadDir}/${fileName}`;
+            const ok = inspectAndFinalize(rawPath, finalPath, fileName, downloadDir);
+
+            if (!ok) {
+              console.log(`=== [direct] ${fileName} downloaded but content is invalid, will fall back ===`);
+              fs.rmSync(rawPath, { force: true });
+              return false;
+            }
+
+            console.log(`[OK] [direct] saved to ${finalPath}`);
+            return true;
+          }
+
+          async function downloadViaFolderUI(browser, folderUrl, fileName, downloadDir) {
+            const context = await browser.newContext({ acceptDownloads: true });
+            const page = await context.newPage();
+
+            try {
+              console.log(`=== [fallback] Opening folder to fetch: ${fileName} ===`);
+              await page.goto(folderUrl, { waitUntil: 'networkidle', timeout: 60000 });
+
+              const rowCandidates = [
+                page.getByRole('row', { name: new RegExp(fileName.replace('.', '\\.')) }),
+                page.locator(`[aria-label*="${fileName}"]`),
+              ];
+
+              let row = null;
+              for (const candidate of rowCandidates) {
+                if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+                  row = candidate.first();
+                  break;
+                }
+              }
+
+              if (!row) {
+                throw new Error(`File not found in folder listing: ${fileName}`);
+              }
+
+              await row.hover();
+
+              const checkbox = row.getByRole('checkbox').first();
+              await checkbox.focus();
+              await page.keyboard.press('Space');
+
+              let isChecked = await checkbox.isChecked().catch(() => false);
+              if (!isChecked) {
+                console.log('=== [fallback] Space did not select row, trying forced click ===');
+                await checkbox.click({ force: true });
+                isChecked = await checkbox.isChecked().catch(() => false);
+              }
+
+              if (!isChecked) {
+                throw new Error(`Could not select row for ${fileName} (neither Space nor forced click worked)`);
+              }
+
+              const downloadButtonCandidates = [
+                page.getByRole('button', { name: 'Download' }),
+                page.getByRole('button', { name: /download/i }),
+                page.locator('[data-automationid="download"]'),
+                page.locator('button:has-text("Download")'),
+              ];
+
+              let downloadButton = null;
+              for (const candidate of downloadButtonCandidates) {
+                if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+                  downloadButton = candidate.first();
+                  break;
+                }
+              }
+
+              if (!downloadButton) {
+                throw new Error(`Download button not found for ${fileName}`);
+              }
+
+              const [download] = await Promise.all([
+                page.waitForEvent('download', { timeout: 300000 }),
+                downloadButton.click()
+              ]);
+
+              const suggested = download.suggestedFilename();
+              console.log(`=== [fallback] Browser suggested filename: ${suggested} (expected: ${fileName}) ===`);
+
+              fs.mkdirSync(downloadDir, { recursive: true });
+              const rawPath = `${downloadDir}/__raw__${fileName}`;
+              await download.saveAs(rawPath);
+
+              const finalPath = `${downloadDir}/${fileName}`;
+              const ok = inspectAndFinalize(rawPath, finalPath, fileName, downloadDir);
+
+              if (!ok) {
+                const fd = fs.openSync(rawPath, 'r');
+                const header = Buffer.alloc(4);
+                fs.readSync(fd, header, 0, 4, 0);
+                fs.closeSync(fd);
+                throw new Error(`${fileName} downloaded but is neither valid gzip nor a zip wrapper (first bytes: ${header.toString('hex')}). Likely an HTML error/sign-in page.`);
+              }
+
+              console.log(`[OK] [fallback] saved to ${finalPath}`);
+
+            } catch (err) {
+              console.error(`=== [fallback] Failed to download ${fileName}: ${err.message} ===`);
+              fs.mkdirSync(downloadDir, { recursive: true });
+              const html = await page.content().catch(() => '<failed to capture HTML>');
+              fs.writeFileSync(`${downloadDir}/${fileName}.page-dump.html`, html);
+              await page.screenshot({ path: `${downloadDir}/${fileName}.page-screenshot.png`, fullPage: true }).catch(() => {});
+              throw err;
+            } finally {
+              await context.close();
+            }
+          }
+
+          (async () => {
+            const folderUrl = process.env.FOLDER_URL;
+            const downloadDir = process.env.DOWNLOAD_DIR;
+            const fileNames = process.env.FILE_NAMES.split(',').map(s => s.trim());
+
+            const browser = await chromium.launch();
+            const directContext = await browser.newContext({ acceptDownloads: true });
+            const directPage = await directContext.newPage();
+
+            // Establish session via the folder share link once, up front,
+            // in case the direct download.aspx calls depend on cookies
+            // granted by visiting the share link first.
+            console.log('=== Establishing session via folder share link ===');
+            await directPage.goto(folderUrl, { waitUntil: 'networkidle', timeout: 60000 }).catch(() => {});
+
+            for (const name of fileNames) {
+              let ok = false;
+              try {
+                ok = await tryDirectDownload(directPage, name, downloadDir);
+              } catch (err) {
+                console.log(`=== [direct] Threw for ${name}: ${err.message}, will fall back ===`);
+              }
+
+              if (!ok) {
+                console.log(`=== Falling back to folder-UI click flow for ${name} ===`);
+                await downloadViaFolderUI(browser, folderUrl, name, downloadDir);
+              }
+            }
+
+            await directContext.close();
+            await browser.close();
+          })();
+          EOF
+
+      - name: "Download ${{ matrix.asset.name }} assets"
+        if: steps.gate.outputs.run == 'true'
         env:
-          ONEDRIVE_USER: ${{ secrets.ONEDRIVE_USER }}
-          ONEDRIVE_FILE_PATH: ${{ secrets.ONEDRIVE_FILE_PATH }}
+          DOWNLOAD_DIR: ${{ matrix.asset.download_dir }}
+          FILE_NAMES: ${{ matrix.asset.file_names }}
         run: |
           set -euo pipefail
           mkdir -p assets
-          TOKEN=$(az account get-access-token --resource https://graph.microsoft.com --query accessToken -o tsv)
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Failed to obtain Graph API token"
-            exit 1
-          fi
-          download_asset() {
-            local filename=$1
-            echo "=== Downloading $filename ==="
-            curl -sfL -H "Authorization: Bearer ${TOKEN}" \
-              "https://graph.microsoft.com/v1.0/users/${ONEDRIVE_USER}/drive/root:/${ONEDRIVE_FILE_PATH}/${filename}:/content" \
-              -o "assets/$filename"
-            echo "[OK] $filename downloaded"
-          }
-          download_asset "videos.tar.gz"
-          download_asset "goldens-linux.tar.gz"
-          download_asset "goldens-windows.tar.gz"
-          download_asset "decoders-linux.tar.gz"
-          download_asset "decoders-windows.tar.gz"
-          download_asset "conf.tar.gz"
-          download_asset "smoke-tests.tar.gz"
+          node download.js
 
-      - name: "Upload smoke assets artifact"
+          echo "=== Validating archive integrity ==="
+          for f in ${{ matrix.asset.download_dir }}/*.tar.gz; do
+            gzip -t "$f"
+          done
+
+          if [ "${{ matrix.asset.name }}" = "smoke" ]; then
+            mv ${{ matrix.asset.download_dir }}/*.tar.gz assets/
+            echo "=== Final smoke assets ==="
+            ls -lh assets/
+          else
+            mv ${{ matrix.asset.download_dir }}/*.tar.gz .
+            ls -lh *.tar.gz
+          fi
+
+      - name: "Upload debug artifacts (on failure)"
+        if: failure() && steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: smoke-assets
-          path: assets/*.tar.gz
+          name: debug-page-dump-${{ matrix.asset.name }}
+          path: |
+            ${{ matrix.asset.download_dir }}/*.html
+            ${{ matrix.asset.download_dir }}/*.png
+            ${{ matrix.asset.download_dir }}/*.tar.gz
           retention-days: 1
+          if-no-files-found: ignore
 
-      - name: "Download sanitizer video bundle"
-        env:
-          ONEDRIVE_USER: ${{ secrets.ONEDRIVE_USER }}
-          ONEDRIVE_FILE_PATH: ${{ secrets.ONEDRIVE_FILE_PATH }}
-        run: |
-          set -euo pipefail
-          TOKEN=$(az account get-access-token --resource https://graph.microsoft.com --query accessToken -o tsv)
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Failed to obtain Graph API token"
-            exit 1
-          fi
-          echo "=== Downloading sanitizer_videos.tar.gz ==="
-          curl -sfL -H "Authorization: Bearer ${TOKEN}" \
-            "https://graph.microsoft.com/v1.0/users/${ONEDRIVE_USER}/drive/root:/${ONEDRIVE_FILE_PATH}/sanitizer_videos.tar.gz:/content" \
-            -o sanitizer_videos.tar.gz
-          echo "[OK] bundle fetched: $(du -h sanitizer_videos.tar.gz)"
-
-      - name: "Upload sanitizer video bundle artifact"
+      - name: "Upload ${{ matrix.asset.name }} artifact"
+        if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: sanitizer-videos-${{ github.run_id }}
-          path: sanitizer_videos.tar.gz
+          name: ${{ matrix.asset.artifact_name }}
+          path: ${{ matrix.asset.output_glob }}
           retention-days: 1
           compression-level: 0
           overwrite: true
-
+          
   build-tsan:
     name: "Build TSAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3022,7 +3251,6 @@ jobs:
     name: "Build ASAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3114,7 +3342,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     needs: [build-tsan, prep-assets]
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3240,7 +3467,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     needs: [build-asan, prep-assets]
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3717,6 +3943,8 @@ jobs:
       - test-macos
       - test-aarch64
       - test-windows
+      - test-tsan
+      - test-asan
     steps:
       - name: Download all summaries
         uses: actions/download-artifact@v8
