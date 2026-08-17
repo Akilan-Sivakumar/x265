@@ -2951,24 +2951,33 @@ jobs:
           fi
 
           echo "=== Files extracted ==="
-          find extracted -maxdepth 1 -type f -exec basename {} \;
+          find extracted -type f -exec basename {} \;
+
+          # The zip extracts into a subfolder named after the SharePoint folder.
+          # Locate it dynamically instead of hardcoding the name, in case it changes.
+          EXTRACT_ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n1)
+          if [ -z "$EXTRACT_ROOT" ]; then
+            echo "::error::Could not find extracted subfolder"
+            exit 1
+          fi
+          echo "=== Using extract root: $EXTRACT_ROOT ==="
 
           echo "=== Moving expected smoke assets ==="
           for f in videos.tar.gz goldens-linux.tar.gz goldens-windows.tar.gz \
-                   decoders-linux.tar.gz decoders-windows.tar.gz \
-                   conf.tar.gz smoke-tests.tar.gz; do
-            if [ ! -f "extracted/$f" ]; then
+                  decoders-linux.tar.gz decoders-windows.tar.gz \
+                  conf.tar.gz smoke-tests.tar.gz; do
+            if [ ! -f "$EXTRACT_ROOT/$f" ]; then
               echo "::error::Expected file $f not found in downloaded folder"
               exit 1
             fi
-            mv "extracted/$f" "assets/$f"
+            mv "$EXTRACT_ROOT/$f" "assets/$f"
           done
 
-          if [ ! -f "extracted/sanitizer_videos.tar.gz" ]; then
+          if [ ! -f "$EXTRACT_ROOT/sanitizer_videos.tar.gz" ]; then
             echo "::error::sanitizer_videos.tar.gz not found in downloaded folder"
             exit 1
           fi
-          mv "extracted/sanitizer_videos.tar.gz" sanitizer_videos.tar.gz
+          mv "$EXTRACT_ROOT/sanitizer_videos.tar.gz" sanitizer_videos.tar.gz
 
           echo "=== Final assets ==="
           ls -lh assets/
