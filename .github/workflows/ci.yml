@@ -2879,31 +2879,20 @@ jobs:
             const context = await browser.newContext({ acceptDownloads: true });
             const page = await context.newPage();
 
-            const base = process.env.ONEDRIVE_SHARE_URL;
-            const url = base.includes('?') ? `${base}&download=1` : `${base}?download=1`;
+            const url = process.env.ONEDRIVE_SHARE_URL;
 
             console.log(`=== Navigating to: ${url} ===`);
+            await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 
-            // Start listening for a download BEFORE navigating, but don't block on
-            // navigation completing — the download may fire mid-load, or only after
-            // the SPA finishes rendering.
-            const downloadPromise = page.waitForEvent('download', { timeout: 90000 }).catch(() => null);
+            console.log('=== Waiting for Download button ===');
+            const downloadButton = page.getByRole('button', { name: 'Download' });
+            await downloadButton.waitFor({ state: 'visible', timeout: 30000 });
 
-            await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }).catch(err => {
-              console.log(`=== Navigation warning (may be normal if download interrupted it): ${err.message} ===`);
-            });
-
-            console.log('=== Page finished loading, waiting for download event ===');
-            const download = await downloadPromise;
-
-            if (!download) {
-              console.error('=== No download event fired ===');
-              const html = await page.content();
-              require('fs').writeFileSync('download/page-dump.html', html);
-              await page.screenshot({ path: 'download/page-screenshot.png', fullPage: true });
-              console.error('Saved page-dump.html and page-screenshot.png for inspection');
-              process.exit(1);
-            }
+            console.log('=== Clicking Download and waiting for file ===');
+            const [download] = await Promise.all([
+              page.waitForEvent('download', { timeout: 300000 }), // 5 min — 1.52GB zip may take a while to build server-side
+              downloadButton.click()
+            ]);
 
             const suggested = download.suggestedFilename();
             console.log(`=== Download triggered: ${suggested} ===`);
