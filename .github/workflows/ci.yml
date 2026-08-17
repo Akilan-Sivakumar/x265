@@ -2855,8 +2855,10 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      FOLDER_URL: "https://multicorewareinc1-my.sharepoint.com/:f:/g/personal/akilan_sivakumar_multicorewareinc_com/IgBIozjxhXPyS4m77U_vqmjUAZxi13BueDQjvEcy4IpbbZM?e=bbWPuf"
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
 
@@ -2866,30 +2868,47 @@ jobs:
           npm install playwright
           npx playwright install --with-deps chromium
 
-      - name: "Download shared folder via headless browser"
-        env:
-          ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
+      - name: "Prepare download script"
         run: |
-          set -euo pipefail
-          mkdir -p assets download
-
           cat > download.js << 'EOF'
           const { chromium } = require('playwright');
+          const fs = require('fs');
 
-          (async () => {
-            const browser = await chromium.launch();
+          async function downloadFileFromFolder(browser, folderUrl, fileName, downloadDir) {
             const context = await browser.newContext({ acceptDownloads: true });
             const page = await context.newPage();
 
-            const url = process.env.ONEDRIVE_SHARE_URL;
-            console.log(`=== Navigating to: ${url} ===`);
-            await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+            console.log(`=== Opening folder to fetch: ${fileName} ===`);
+            await page.goto(folderUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
-            console.log('=== Waiting for Download button ===');
+            const rowCandidates = [
+              page.getByRole('row', { name: new RegExp(fileName.replace('.', '\\.')) }),
+              page.locator(`[aria-label*="${fileName}"]`),
+            ];
 
-            // Try a few plausible selectors, in order, since the exact accessible
-            // name / structure may vary between sessions or rollouts.
-            const candidates = [
+            let row = null;
+            for (const candidate of rowCandidates) {
+              if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+                row = candidate.first();
+                break;
+              }
+            }
+
+            if (!row) {
+              console.error(`=== Could not find file "${fileName}" in folder listing ===`);
+              const html = await page.content();
+              fs.mkdirSync(downloadDir, { recursive: true });
+              fs.writeFileSync(`${downloadDir}/${fileName}.page-dump.html`, html);
+              await page.screenshot({ path: `${downloadDir}/${fileName}.page-screenshot.png`, fullPage: true });
+              await context.close();
+              throw new Error(`File not found in folder listing: ${fileName}`);
+            }
+
+            await row.hover();
+            const checkbox = row.getByRole('checkbox').first();
+            await checkbox.click();
+
+            const downloadButtonCandidates = [
               page.getByRole('button', { name: 'Download' }),
               page.getByRole('button', { name: /download/i }),
               page.locator('[data-automationid="download"]'),
@@ -2897,99 +2916,80 @@ jobs:
             ];
 
             let downloadButton = null;
-            for (const candidate of candidates) {
+            for (const candidate of downloadButtonCandidates) {
               if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
                 downloadButton = candidate.first();
-                console.log('=== Found a matching Download control ===');
                 break;
               }
             }
 
             if (!downloadButton) {
-              console.error('=== No Download button found with any selector ===');
-              const html = await page.content();
-              require('fs').mkdirSync('download', { recursive: true });
-              require('fs').writeFileSync('download/page-dump.html', html);
-              await page.screenshot({ path: 'download/page-screenshot.png', fullPage: true });
-              console.error('Saved page-dump.html and page-screenshot.png for inspection');
-              process.exit(1);
+              console.error(`=== No Download button found after selecting ${fileName} ===`);
+              await context.close();
+              throw new Error(`Download button not found for ${fileName}`);
             }
 
-            console.log('=== Clicking Download and waiting for file ===');
             const [download] = await Promise.all([
               page.waitForEvent('download', { timeout: 300000 }),
               downloadButton.click()
             ]);
 
-            const suggested = download.suggestedFilename();
-            console.log(`=== Download triggered: ${suggested} ===`);
-            await download.saveAs(`download/${suggested}`);
-            console.log(`[OK] saved to download/${suggested}`);
+            fs.mkdirSync(downloadDir, { recursive: true });
+            const savePath = `${downloadDir}/${fileName}`;
+            await download.saveAs(savePath);
+            console.log(`[OK] saved to ${savePath}`);
+
+            await context.close();
+          }
+
+          (async () => {
+            const folderUrl = process.env.FOLDER_URL;
+            const downloadDir = process.env.DOWNLOAD_DIR;
+            const fileNames = process.env.FILE_NAMES.split(',').map(s => s.trim());
+
+            const browser = await chromium.launch();
+
+            for (const name of fileNames) {
+              await downloadFileFromFolder(browser, folderUrl, name, downloadDir);
+            }
 
             await browser.close();
           })();
           EOF
 
+      - name: "Download smoke assets"
+        if: github.event_name == 'pull_request_target'
+        env:
+          DOWNLOAD_DIR: download-smoke
+          FILE_NAMES: "conf.tar.gz,decoders-linux.tar.gz,decoders-windows.tar.gz,goldens-linux.tar.gz,goldens-windows.tar.gz,smoke-tests.tar.gz,videos.tar.gz"
+        run: |
+          set -euo pipefail
+          mkdir -p assets
           node download.js
-
-          echo "=== What we got ==="
-          ls -lh download/
-
-          DOWNLOADED_FILE=$(find download -maxdepth 1 -type f ! -name 'page-dump.html' | head -n1)
-          if [ -z "$DOWNLOADED_FILE" ]; then
-            echo "::error::No file was downloaded. Check download/page-dump.html in the uploaded debug artifact."
-            exit 1
-          fi
-
-          echo "=== Inspecting downloaded file ==="
-          file "$DOWNLOADED_FILE"
-
-          echo "=== Extracting ==="
-          if unzip -l "$DOWNLOADED_FILE" > /dev/null 2>&1; then
-            unzip -o "$DOWNLOADED_FILE" -d extracted/
-          else
-            echo "::error::Downloaded file is not a valid zip. It may be an HTML error/sign-in page."
-            exit 1
-          fi
-
-          echo "=== Files extracted ==="
-          find extracted -type f -exec basename {} \;
-
-          # The zip extracts into a subfolder named after the SharePoint folder.
-          # Locate it dynamically instead of hardcoding the name, in case it changes.
-          EXTRACT_ROOT=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n1)
-          if [ -z "$EXTRACT_ROOT" ]; then
-            echo "::error::Could not find extracted subfolder"
-            exit 1
-          fi
-          echo "=== Using extract root: $EXTRACT_ROOT ==="
-
-          echo "=== Moving expected smoke assets ==="
-          for f in videos.tar.gz goldens-linux.tar.gz goldens-windows.tar.gz \
-                  decoders-linux.tar.gz decoders-windows.tar.gz \
-                  conf.tar.gz smoke-tests.tar.gz; do
-            if [ ! -f "$EXTRACT_ROOT/$f" ]; then
-              echo "::error::Expected file $f not found in downloaded folder"
-              exit 1
-            fi
-            mv "$EXTRACT_ROOT/$f" "assets/$f"
-          done
-
-          if [ ! -f "$EXTRACT_ROOT/sanitizer_videos.tar.gz" ]; then
-            echo "::error::sanitizer_videos.tar.gz not found in downloaded folder"
-            exit 1
-          fi
-          mv "$EXTRACT_ROOT/sanitizer_videos.tar.gz" sanitizer_videos.tar.gz
-
-          if [ ! -f "$EXTRACT_ROOT/xiph_videos.tar.gz" ]; then
-            echo "::error::xiph_videos.tar.gz not found in downloaded folder"
-            exit 1
-          fi
-          mv "$EXTRACT_ROOT/xiph_videos.tar.gz" xiph_videos.tar.gz
-
-          echo "=== Final assets ==="
+          mv download-smoke/*.tar.gz assets/
+          echo "=== Final smoke assets ==="
           ls -lh assets/
+
+      - name: "Download sanitizer video bundle"
+        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
+        env:
+          DOWNLOAD_DIR: download-sanitizer
+          FILE_NAMES: "sanitizer_videos.tar.gz"
+        run: |
+          set -euo pipefail
+          node download.js
+          mv download-sanitizer/sanitizer_videos.tar.gz sanitizer_videos.tar.gz
           ls -lh sanitizer_videos.tar.gz
+
+      - name: "Download xiph video bundle"
+        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
+        env:
+          DOWNLOAD_DIR: download-xiph
+          FILE_NAMES: "xiph_videos.tar.gz"
+        run: |
+          set -euo pipefail
+          node download.js
+          mv download-xiph/xiph_videos.tar.gz xiph_videos.tar.gz
           ls -lh xiph_videos.tar.gz
 
       - name: "Upload debug page dump (on failure)"
@@ -2998,12 +2998,17 @@ jobs:
         with:
           name: debug-page-dump
           path: |
-            download/page-dump.html
-            download/page-screenshot.png
+            download-smoke/*.html
+            download-smoke/*.png
+            download-sanitizer/*.html
+            download-sanitizer/*.png
+            download-xiph/*.html
+            download-xiph/*.png
           retention-days: 1
           if-no-files-found: ignore
 
       - name: "Upload smoke assets artifact"
+        if: github.event_name == 'pull_request_target'
         uses: actions/upload-artifact@v7
         with:
           name: smoke-assets
@@ -3011,6 +3016,7 @@ jobs:
           retention-days: 1
 
       - name: "Upload sanitizer video bundle artifact"
+        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
         uses: actions/upload-artifact@v7
         with:
           name: sanitizer-videos-${{ github.run_id }}
@@ -3020,6 +3026,7 @@ jobs:
           overwrite: true
 
       - name: "Upload xiph video bundle artifact"
+        if: github.event_name == 'push' || github.event_name == 'pull_request_target'
         uses: actions/upload-artifact@v7
         with:
           name: xiph-videos-${{ github.run_id }}
