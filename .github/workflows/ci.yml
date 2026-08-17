@@ -2965,7 +2965,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: debug-page-dump
-          path: download/page-dump.html
+          path: |
+            download/page-dump.html
+            download/page-screenshot.png
           retention-days: 1
           if-no-files-found: ignore
 
