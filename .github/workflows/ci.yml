@@ -2851,7 +2851,6 @@ jobs:
     name: "Prepare Assets"
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.event_name == 'pull_request_target'
     permissions:
       contents: read
     steps:
