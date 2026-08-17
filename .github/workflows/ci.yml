@@ -2878,68 +2878,86 @@ jobs:
             const context = await browser.newContext({ acceptDownloads: true });
             const page = await context.newPage();
 
-            console.log(`=== Opening folder to fetch: ${fileName} ===`);
-            await page.goto(folderUrl, { waitUntil: 'networkidle', timeout: 60000 });
+            try {
+              console.log(`=== Opening folder to fetch: ${fileName} ===`);
+              await page.goto(folderUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
-            const rowCandidates = [
-              page.getByRole('row', { name: new RegExp(fileName.replace('.', '\\.')) }),
-              page.locator(`[aria-label*="${fileName}"]`),
-            ];
+              const rowCandidates = [
+                page.getByRole('row', { name: new RegExp(fileName.replace('.', '\\.')) }),
+                page.locator(`[aria-label*="${fileName}"]`),
+              ];
 
-            let row = null;
-            for (const candidate of rowCandidates) {
-              if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
-                row = candidate.first();
-                break;
+              let row = null;
+              for (const candidate of rowCandidates) {
+                if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+                  row = candidate.first();
+                  break;
+                }
               }
-            }
 
-            if (!row) {
-              console.error(`=== Could not find file "${fileName}" in folder listing ===`);
-              const html = await page.content();
+              if (!row) {
+                throw new Error(`File not found in folder listing: ${fileName}`);
+              }
+
+              await row.hover();
+
+              // Select the row. Prefer keyboard (focus + Space) since it avoids the
+              // pointer-interception issues that plague the checkbox overlay; fall
+              // back to a forced click if keyboard selection doesn't stick.
+              const checkbox = row.getByRole('checkbox').first();
+              await checkbox.focus();
+              await page.keyboard.press('Space');
+
+              let isChecked = await checkbox.isChecked().catch(() => false);
+              if (!isChecked) {
+                console.log('=== Space did not select row, trying forced click ===');
+                await checkbox.click({ force: true });
+                isChecked = await checkbox.isChecked().catch(() => false);
+              }
+
+              if (!isChecked) {
+                throw new Error(`Could not select row for ${fileName} (neither Space nor forced click worked)`);
+              }
+
+              const downloadButtonCandidates = [
+                page.getByRole('button', { name: 'Download' }),
+                page.getByRole('button', { name: /download/i }),
+                page.locator('[data-automationid="download"]'),
+                page.locator('button:has-text("Download")'),
+              ];
+
+              let downloadButton = null;
+              for (const candidate of downloadButtonCandidates) {
+                if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+                  downloadButton = candidate.first();
+                  break;
+                }
+              }
+
+              if (!downloadButton) {
+                throw new Error(`Download button not found for ${fileName}`);
+              }
+
+              const [download] = await Promise.all([
+                page.waitForEvent('download', { timeout: 300000 }),
+                downloadButton.click()
+              ]);
+
               fs.mkdirSync(downloadDir, { recursive: true });
+              const savePath = `${downloadDir}/${fileName}`;
+              await download.saveAs(savePath);
+              console.log(`[OK] saved to ${savePath}`);
+
+            } catch (err) {
+              console.error(`=== Failed to download ${fileName}: ${err.message} ===`);
+              fs.mkdirSync(downloadDir, { recursive: true });
+              const html = await page.content().catch(() => '<failed to capture HTML>');
               fs.writeFileSync(`${downloadDir}/${fileName}.page-dump.html`, html);
-              await page.screenshot({ path: `${downloadDir}/${fileName}.page-screenshot.png`, fullPage: true });
+              await page.screenshot({ path: `${downloadDir}/${fileName}.page-screenshot.png`, fullPage: true }).catch(() => {});
+              throw err;
+            } finally {
               await context.close();
-              throw new Error(`File not found in folder listing: ${fileName}`);
             }
-
-            await row.hover();
-            const checkbox = row.getByRole('checkbox').first();
-            await checkbox.click();
-
-            const downloadButtonCandidates = [
-              page.getByRole('button', { name: 'Download' }),
-              page.getByRole('button', { name: /download/i }),
-              page.locator('[data-automationid="download"]'),
-              page.locator('button:has-text("Download")'),
-            ];
-
-            let downloadButton = null;
-            for (const candidate of downloadButtonCandidates) {
-              if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
-                downloadButton = candidate.first();
-                break;
-              }
-            }
-
-            if (!downloadButton) {
-              console.error(`=== No Download button found after selecting ${fileName} ===`);
-              await context.close();
-              throw new Error(`Download button not found for ${fileName}`);
-            }
-
-            const [download] = await Promise.all([
-              page.waitForEvent('download', { timeout: 300000 }),
-              downloadButton.click()
-            ]);
-
-            fs.mkdirSync(downloadDir, { recursive: true });
-            const savePath = `${downloadDir}/${fileName}`;
-            await download.saveAs(savePath);
-            console.log(`[OK] saved to ${savePath}`);
-
-            await context.close();
           }
 
           (async () => {
