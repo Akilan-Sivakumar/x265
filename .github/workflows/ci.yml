@@ -2880,17 +2880,42 @@ jobs:
             const page = await context.newPage();
 
             const url = process.env.ONEDRIVE_SHARE_URL;
-
             console.log(`=== Navigating to: ${url} ===`);
             await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 
             console.log('=== Waiting for Download button ===');
-            const downloadButton = page.getByRole('button', { name: 'Download' });
-            await downloadButton.waitFor({ state: 'visible', timeout: 30000 });
+
+            // Try a few plausible selectors, in order, since the exact accessible
+            // name / structure may vary between sessions or rollouts.
+            const candidates = [
+              page.getByRole('button', { name: 'Download' }),
+              page.getByRole('button', { name: /download/i }),
+              page.locator('[data-automationid="download"]'),
+              page.locator('button:has-text("Download")'),
+            ];
+
+            let downloadButton = null;
+            for (const candidate of candidates) {
+              if (await candidate.first().isVisible({ timeout: 10000 }).catch(() => false)) {
+                downloadButton = candidate.first();
+                console.log('=== Found a matching Download control ===');
+                break;
+              }
+            }
+
+            if (!downloadButton) {
+              console.error('=== No Download button found with any selector ===');
+              const html = await page.content();
+              require('fs').mkdirSync('download', { recursive: true });
+              require('fs').writeFileSync('download/page-dump.html', html);
+              await page.screenshot({ path: 'download/page-screenshot.png', fullPage: true });
+              console.error('Saved page-dump.html and page-screenshot.png for inspection');
+              process.exit(1);
+            }
 
             console.log('=== Clicking Download and waiting for file ===');
             const [download] = await Promise.all([
-              page.waitForEvent('download', { timeout: 300000 }), // 5 min — 1.52GB zip may take a while to build server-side
+              page.waitForEvent('download', { timeout: 300000 }),
               downloadButton.click()
             ]);
 
