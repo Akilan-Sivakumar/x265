@@ -2843,12 +2843,12 @@ jobs:
           path: summaries/*.log
           retention-days: 3
 
-  # NOTE: This step scrapes SharePoint's web UI (no auth) rather than
-  # calling the Graph API, to avoid needing Azure AD app credentials.
-  # If this step starts failing, SharePoint's UI likely changed —
-  # check the "debug-page-dump" artifact (HTML + screenshot) uploaded
-  # on failure to see what the page looked like, then update the
-  # `candidates` selector list in download.js accordingly.
+  # NOTE: Primary download method hits SharePoint's download.aspx endpoint
+  # directly (built from FOLDER_URL + filename), avoiding UI scraping.
+  # If SharePoint tenant behavior changes and direct URLs stop working,
+  # the script automatically falls back to clicking through the folder's
+  # web UI. If BOTH fail, check the "debug-page-dump-*" artifact (HTML +
+  # screenshot) uploaded on failure to see what went wrong.
   prep-assets:
     name: "Prepare Assets (${{ matrix.asset.name }})"
     runs-on: ubuntu-latest
@@ -2876,6 +2876,8 @@ jobs:
             artifact_name: xiph-videos-${{ github.run_id }}
     env:
       FOLDER_URL: "https://multicorewareinc1-my.sharepoint.com/:f:/g/personal/akilan_sivakumar_multicorewareinc_com/IgBIozjxhXPyS4m77U_vqmjUAZxi13BueDQjvEcy4IpbbZM?e=bbWPuf"
+      SITE_BASE: "https://multicorewareinc1-my.sharepoint.com"
+      LIBRARY_PATH: "/personal/x265tests_multicorewareinc_com/Documents/x265-ci-pipeline-assets"
     steps:
       - name: "Check whether this asset should run"
         id: gate
@@ -2906,12 +2908,80 @@ jobs:
           const fs = require('fs');
           const { execSync } = require('child_process');
 
-          async function downloadFileFromFolder(browser, folderUrl, fileName, downloadDir) {
+          function buildDirectUrl(fileName) {
+            const sourceUrl = `${process.env.LIBRARY_PATH}/${fileName}`;
+            return `${process.env.SITE_BASE}${process.env.LIBRARY_PATH.split('/Documents')[0]}/_layouts/15/download.aspx?SourceUrl=${encodeURIComponent(sourceUrl)}`;
+          }
+
+          function inspectAndFinalize(rawPath, finalPath, fileName, downloadDir) {
+            const fd = fs.openSync(rawPath, 'r');
+            const header = Buffer.alloc(4);
+            fs.readSync(fd, header, 0, 4, 0);
+            fs.closeSync(fd);
+
+            const isZip = header[0] === 0x50 && header[1] === 0x4b;
+            const isGzip = header[0] === 0x1f && header[1] === 0x8b;
+
+            if (fileName.endsWith('.tar.gz') && isZip) {
+              console.log(`=== ${fileName} arrived as a zip wrapper, unwrapping ===`);
+              const unzipDir = `${downloadDir}/__unzipped__${fileName}`;
+              execSync(`unzip -o "${rawPath}" -d "${unzipDir}"`);
+              const inner = execSync(`find "${unzipDir}" -type f -name "*.tar.gz" | head -n1`).toString().trim();
+              if (!inner) {
+                throw new Error(`Unwrapped zip for ${fileName} but found no .tar.gz inside`);
+              }
+              fs.renameSync(inner, finalPath);
+              fs.rmSync(rawPath, { force: true });
+              fs.rmSync(unzipDir, { recursive: true, force: true });
+              return true;
+            }
+
+            if (fileName.endsWith('.tar.gz') && !isGzip) {
+              return false; // caller decides whether to fall back or throw
+            }
+
+            fs.renameSync(rawPath, finalPath);
+            return true;
+          }
+
+          async function tryDirectDownload(page, fileName, downloadDir) {
+            const url = buildDirectUrl(fileName);
+            console.log(`=== [direct] Attempting: ${fileName} ===`);
+            console.log(`    ${url}`);
+
+            const [download] = await Promise.all([
+              page.waitForEvent('download', { timeout: 60000 }).catch(() => null),
+              page.goto(url, { timeout: 60000 }).catch(() => {}),
+            ]);
+
+            if (!download) {
+              console.log(`=== [direct] No download event fired for ${fileName} ===`);
+              return false;
+            }
+
+            fs.mkdirSync(downloadDir, { recursive: true });
+            const rawPath = `${downloadDir}/__raw__${fileName}`;
+            await download.saveAs(rawPath);
+
+            const finalPath = `${downloadDir}/${fileName}`;
+            const ok = inspectAndFinalize(rawPath, finalPath, fileName, downloadDir);
+
+            if (!ok) {
+              console.log(`=== [direct] ${fileName} downloaded but content is invalid, will fall back ===`);
+              fs.rmSync(rawPath, { force: true });
+              return false;
+            }
+
+            console.log(`[OK] [direct] saved to ${finalPath}`);
+            return true;
+          }
+
+          async function downloadViaFolderUI(browser, folderUrl, fileName, downloadDir) {
             const context = await browser.newContext({ acceptDownloads: true });
             const page = await context.newPage();
 
             try {
-              console.log(`=== Opening folder to fetch: ${fileName} ===`);
+              console.log(`=== [fallback] Opening folder to fetch: ${fileName} ===`);
               await page.goto(folderUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
               const rowCandidates = [
@@ -2939,7 +3009,7 @@ jobs:
 
               let isChecked = await checkbox.isChecked().catch(() => false);
               if (!isChecked) {
-                console.log('=== Space did not select row, trying forced click ===');
+                console.log('=== [fallback] Space did not select row, trying forced click ===');
                 await checkbox.click({ force: true });
                 isChecked = await checkbox.isChecked().catch(() => false);
               }
@@ -2973,43 +3043,27 @@ jobs:
               ]);
 
               const suggested = download.suggestedFilename();
-              console.log(`=== Browser suggested filename: ${suggested} (expected: ${fileName}) ===`);
+              console.log(`=== [fallback] Browser suggested filename: ${suggested} (expected: ${fileName}) ===`);
 
               fs.mkdirSync(downloadDir, { recursive: true });
               const rawPath = `${downloadDir}/__raw__${fileName}`;
               await download.saveAs(rawPath);
 
-              const fd = fs.openSync(rawPath, 'r');
-              const header = Buffer.alloc(4);
-              fs.readSync(fd, header, 0, 4, 0);
-              fs.closeSync(fd);
-
-              const isZip = header[0] === 0x50 && header[1] === 0x4b;
-              const isGzip = header[0] === 0x1f && header[1] === 0x8b;
-
               const finalPath = `${downloadDir}/${fileName}`;
+              const ok = inspectAndFinalize(rawPath, finalPath, fileName, downloadDir);
 
-              if (fileName.endsWith('.tar.gz') && isZip) {
-                console.log(`=== ${fileName} arrived as a zip wrapper, unwrapping ===`);
-                const unzipDir = `${downloadDir}/__unzipped__${fileName}`;
-                execSync(`unzip -o "${rawPath}" -d "${unzipDir}"`);
-                const inner = execSync(`find "${unzipDir}" -type f -name "*.tar.gz" | head -n1`).toString().trim();
-                if (!inner) {
-                  throw new Error(`Unwrapped zip for ${fileName} but found no .tar.gz inside`);
-                }
-                fs.renameSync(inner, finalPath);
-                fs.rmSync(rawPath, { force: true });
-                fs.rmSync(unzipDir, { recursive: true, force: true });
-              } else if (fileName.endsWith('.tar.gz') && !isGzip) {
+              if (!ok) {
+                const fd = fs.openSync(rawPath, 'r');
+                const header = Buffer.alloc(4);
+                fs.readSync(fd, header, 0, 4, 0);
+                fs.closeSync(fd);
                 throw new Error(`${fileName} downloaded but is neither valid gzip nor a zip wrapper (first bytes: ${header.toString('hex')}). Likely an HTML error/sign-in page.`);
-              } else {
-                fs.renameSync(rawPath, finalPath);
               }
 
-              console.log(`[OK] saved to ${finalPath}`);
+              console.log(`[OK] [fallback] saved to ${finalPath}`);
 
             } catch (err) {
-              console.error(`=== Failed to download ${fileName}: ${err.message} ===`);
+              console.error(`=== [fallback] Failed to download ${fileName}: ${err.message} ===`);
               fs.mkdirSync(downloadDir, { recursive: true });
               const html = await page.content().catch(() => '<failed to capture HTML>');
               fs.writeFileSync(`${downloadDir}/${fileName}.page-dump.html`, html);
@@ -3026,11 +3080,30 @@ jobs:
             const fileNames = process.env.FILE_NAMES.split(',').map(s => s.trim());
 
             const browser = await chromium.launch();
+            const directContext = await browser.newContext({ acceptDownloads: true });
+            const directPage = await directContext.newPage();
+
+            // Establish session via the folder share link once, up front,
+            // in case the direct download.aspx calls depend on cookies
+            // granted by visiting the share link first.
+            console.log('=== Establishing session via folder share link ===');
+            await directPage.goto(folderUrl, { waitUntil: 'networkidle', timeout: 60000 }).catch(() => {});
 
             for (const name of fileNames) {
-              await downloadFileFromFolder(browser, folderUrl, name, downloadDir);
+              let ok = false;
+              try {
+                ok = await tryDirectDownload(directPage, name, downloadDir);
+              } catch (err) {
+                console.log(`=== [direct] Threw for ${name}: ${err.message}, will fall back ===`);
+              }
+
+              if (!ok) {
+                console.log(`=== Falling back to folder-UI click flow for ${name} ===`);
+                await downloadViaFolderUI(browser, folderUrl, name, downloadDir);
+              }
             }
 
+            await directContext.close();
             await browser.close();
           })();
           EOF
@@ -3080,7 +3153,7 @@ jobs:
           retention-days: 1
           compression-level: 0
           overwrite: true
-        
+          
   build-tsan:
     name: "Build TSAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
