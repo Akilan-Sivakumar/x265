@@ -2873,6 +2873,7 @@ jobs:
           cat > download.js << 'EOF'
           const { chromium } = require('playwright');
           const fs = require('fs');
+          const { execSync } = require('child_process');
 
           async function downloadFileFromFolder(browser, folderUrl, fileName, downloadDir) {
             const context = await browser.newContext({ acceptDownloads: true });
@@ -2943,10 +2944,43 @@ jobs:
                 downloadButton.click()
               ]);
 
+              const suggested = download.suggestedFilename();
+              console.log(`=== Browser suggested filename: ${suggested} (expected: ${fileName}) ===`);
+
               fs.mkdirSync(downloadDir, { recursive: true });
-              const savePath = `${downloadDir}/${fileName}`;
-              await download.saveAs(savePath);
-              console.log(`[OK] saved to ${savePath}`);
+              const rawPath = `${downloadDir}/__raw__${fileName}`;
+              await download.saveAs(rawPath);
+
+              // Inspect magic bytes to see what we actually got, regardless of
+              // suggestedFilename or the name we expected.
+              const fd = fs.openSync(rawPath, 'r');
+              const header = Buffer.alloc(4);
+              fs.readSync(fd, header, 0, 4, 0);
+              fs.closeSync(fd);
+
+              const isZip = header[0] === 0x50 && header[1] === 0x4b; // "PK"
+              const isGzip = header[0] === 0x1f && header[1] === 0x8b;
+
+              const finalPath = `${downloadDir}/${fileName}`;
+
+              if (fileName.endsWith('.tar.gz') && isZip) {
+                console.log(`=== ${fileName} arrived as a zip wrapper, unwrapping ===`);
+                const unzipDir = `${downloadDir}/__unzipped__${fileName}`;
+                execSync(`unzip -o "${rawPath}" -d "${unzipDir}"`);
+                const inner = execSync(`find "${unzipDir}" -type f -name "*.tar.gz" | head -n1`).toString().trim();
+                if (!inner) {
+                  throw new Error(`Unwrapped zip for ${fileName} but found no .tar.gz inside`);
+                }
+                fs.renameSync(inner, finalPath);
+                fs.rmSync(rawPath, { force: true });
+                fs.rmSync(unzipDir, { recursive: true, force: true });
+              } else if (fileName.endsWith('.tar.gz') && !isGzip) {
+                throw new Error(`${fileName} downloaded but is neither valid gzip nor a zip wrapper (first bytes: ${header.toString('hex')}). Likely an HTML error/sign-in page.`);
+              } else {
+                fs.renameSync(rawPath, finalPath);
+              }
+
+              console.log(`[OK] saved to ${finalPath}`);
 
             } catch (err) {
               console.error(`=== Failed to download ${fileName}: ${err.message} ===`);
@@ -2984,6 +3018,10 @@ jobs:
           set -euo pipefail
           mkdir -p assets
           node download.js
+          echo "=== Validating archive integrity ==="
+          for f in download-smoke/*.tar.gz; do
+            gzip -t "$f"
+          done
           mv download-smoke/*.tar.gz assets/
           echo "=== Final smoke assets ==="
           ls -lh assets/
@@ -2996,6 +3034,8 @@ jobs:
         run: |
           set -euo pipefail
           node download.js
+          echo "=== Validating archive integrity ==="
+          gzip -t download-sanitizer/sanitizer_videos.tar.gz
           mv download-sanitizer/sanitizer_videos.tar.gz sanitizer_videos.tar.gz
           ls -lh sanitizer_videos.tar.gz
 
@@ -3007,10 +3047,12 @@ jobs:
         run: |
           set -euo pipefail
           node download.js
+          echo "=== Validating archive integrity ==="
+          gzip -t download-xiph/xiph_videos.tar.gz
           mv download-xiph/xiph_videos.tar.gz xiph_videos.tar.gz
           ls -lh xiph_videos.tar.gz
 
-      - name: "Upload debug page dump (on failure)"
+      - name: "Upload debug artifacts (on failure)"
         if: failure()
         uses: actions/upload-artifact@v7
         with:
@@ -3018,10 +3060,13 @@ jobs:
           path: |
             download-smoke/*.html
             download-smoke/*.png
+            download-smoke/*.tar.gz
             download-sanitizer/*.html
             download-sanitizer/*.png
+            download-sanitizer/*.tar.gz
             download-xiph/*.html
             download-xiph/*.png
+            download-xiph/*.tar.gz
           retention-days: 1
           if-no-files-found: ignore
 
@@ -3052,7 +3097,7 @@ jobs:
           retention-days: 1
           compression-level: 0
           overwrite: true
-
+          
   build-tsan:
     name: "Build TSAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
