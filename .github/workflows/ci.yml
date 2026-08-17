@@ -2884,17 +2884,24 @@ jobs:
 
             console.log(`=== Navigating to: ${url} ===`);
 
-            let download;
-            try {
-              [download] = await Promise.all([
-                page.waitForEvent('download', { timeout: 120000 }),
-                page.goto(url, { waitUntil: 'commit' }).catch(() => {})
-              ]);
-            } catch (err) {
-              console.error('=== No download event fired within timeout ===');
+            // Start listening for a download BEFORE navigating, but don't block on
+            // navigation completing — the download may fire mid-load, or only after
+            // the SPA finishes rendering.
+            const downloadPromise = page.waitForEvent('download', { timeout: 90000 }).catch(() => null);
+
+            await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 }).catch(err => {
+              console.log(`=== Navigation warning (may be normal if download interrupted it): ${err.message} ===`);
+            });
+
+            console.log('=== Page finished loading, waiting for download event ===');
+            const download = await downloadPromise;
+
+            if (!download) {
+              console.error('=== No download event fired ===');
               const html = await page.content();
               require('fs').writeFileSync('download/page-dump.html', html);
-              console.error('Page content saved to download/page-dump.html for inspection');
+              await page.screenshot({ path: 'download/page-screenshot.png', fullPage: true });
+              console.error('Saved page-dump.html and page-screenshot.png for inspection');
               process.exit(1);
             }
 
