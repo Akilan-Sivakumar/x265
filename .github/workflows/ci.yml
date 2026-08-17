@@ -2851,65 +2851,50 @@ jobs:
     name: "Prepare Assets"
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: github.event_name == 'pull_request_target'
     permissions:
       contents: read
     steps:
-      - name: "Resolve OneDrive share and list contents (dry-run)"
-        id: resolve-share
+      - name: "Download and extract shared folder (anonymous)"
         env:
           ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
         run: |
           set -euo pipefail
+          mkdir -p assets download
 
-          # Encode the "Anyone with the link" share URL into the
-          # Graph API's expected shareId format: u!<base64url>
-          ENCODED=$(printf '%s' "$ONEDRIVE_SHARE_URL" | base64 -w0 | tr '+/' '-_' | tr -d '=')
-          SHARE_ID="u!${ENCODED}"
-          echo "share_id=${SHARE_ID}" >> "$GITHUB_OUTPUT"
+          # Extract the "personal/<user>" path and share token from the link
+          USER_PATH=$(echo "$ONEDRIVE_SHARE_URL" | sed -n 's#.*/personal/\([^/]*\)/.*#\1#p')
+          SHARE_TOKEN=$(echo "$ONEDRIVE_SHARE_URL" | sed -n 's#.*/personal/[^/]*/\([^?]*\).*#\1#p')
 
-          echo "=== Listing shared folder contents ==="
-          HTTP_CODE=$(curl -sS -o children.json -w "%{http_code}" \
-            "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/children")
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Graph API returned HTTP ${HTTP_CODE} — link may not be anonymous-accessible, or tenant blocks anonymous Graph resolution."
-            cat children.json
+          if [ -z "$USER_PATH" ] || [ -z "$SHARE_TOKEN" ]; then
+            echo "::error::Could not parse user path or share token from ONEDRIVE_SHARE_URL"
             exit 1
           fi
 
-          echo "=== Files found in shared folder ==="
-          jq -r '.value[] | "\(.name)\t\(.size) bytes"' children.json
+          DOWNLOAD_URL="https://$(echo "$ONEDRIVE_SHARE_URL" | awk -F/ '{print $3}')/personal/${USER_PATH}/_layouts/15/download.aspx?share=${SHARE_TOKEN}"
 
-      - name: "Download smoke assets"
-        env:
-          ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
-        run: |
-          set -euo pipefail
-          mkdir -p assets
+          echo "=== Downloading folder as zip ==="
+          HTTP_CODE=$(curl -sSL -o download/folder.zip -w "%{http_code}" "$DOWNLOAD_URL")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Anonymous download failed with HTTP ${HTTP_CODE} — link may be revoked, expired, or tenant blocks anonymous downloads."
+            exit 1
+          fi
+          echo "[OK] folder.zip downloaded ($(du -h download/folder.zip | cut -f1))"
 
-          SHARE_ID="${{ steps.resolve-share.outputs.share_id }}"
+          echo "=== Extracting archive ==="
+          unzip -o download/folder.zip -d download/extracted
 
-          children_json=$(curl -sfL "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/children")
-
-          download_asset() {
-            local filename=$1
-            local dest=$2
-            echo "=== Downloading $filename ==="
-            local download_url
-            download_url=$(echo "$children_json" | jq -r --arg name "$filename" \
-              '.value[] | select(.name == $name) | .["@microsoft.graph.downloadUrl"]')
-            if [ -z "$download_url" ] || [ "$download_url" == "null" ]; then
-              echo "::error::Could not find download URL for $filename"
-              exit 1
-            fi
-            curl -sfL "$download_url" -o "$dest"
-            echo "[OK] $filename downloaded ($(du -h "$dest" | cut -f1))"
-          }
+          echo "=== Files found ==="
+          find download/extracted -maxdepth 1 -type f -exec basename {} \;
 
           for f in videos.tar.gz goldens-linux.tar.gz goldens-windows.tar.gz \
                    decoders-linux.tar.gz decoders-windows.tar.gz \
                    conf.tar.gz smoke-tests.tar.gz; do
-            download_asset "$f" "assets/$f"
+            if [ ! -f "download/extracted/$f" ]; then
+              echo "::error::Expected file $f not found in downloaded folder"
+              exit 1
+            fi
+            mv "download/extracted/$f" "assets/$f"
           done
 
       - name: "Upload smoke assets artifact"
@@ -2919,27 +2904,11 @@ jobs:
           path: assets/*.tar.gz
           retention-days: 1
 
-      - name: "Download sanitizer video bundle"
-        env:
-          ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
+      - name: "Move sanitizer video bundle"
         run: |
           set -euo pipefail
-
-          SHARE_ID="${{ steps.resolve-share.outputs.share_id }}"
-
-          children_json=$(curl -sfL "https://graph.microsoft.com/v1.0/shares/${SHARE_ID}/driveItem/children")
-
-          download_url=$(echo "$children_json" | jq -r \
-            '.value[] | select(.name == "sanitizer_videos.tar.gz") | .["@microsoft.graph.downloadUrl"]')
-
-          if [ -z "$download_url" ] || [ "$download_url" == "null" ]; then
-            echo "::error::Could not find download URL for sanitizer_videos.tar.gz"
-            exit 1
-          fi
-
-          echo "=== Downloading sanitizer_videos.tar.gz ==="
-          curl -sfL "$download_url" -o sanitizer_videos.tar.gz
-          echo "[OK] bundle fetched: $(du -h sanitizer_videos.tar.gz)"
+          mv download/extracted/sanitizer_videos.tar.gz sanitizer_videos.tar.gz
+          echo "[OK] bundle ready: $(du -h sanitizer_videos.tar.gz)"
 
       - name: "Upload sanitizer video bundle artifact"
         uses: actions/upload-artifact@v7
