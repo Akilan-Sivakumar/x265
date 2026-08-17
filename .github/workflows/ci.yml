@@ -2854,47 +2854,113 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: "Download and extract shared folder (anonymous)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: "Install Playwright"
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: "Download shared folder via headless browser"
         env:
           ONEDRIVE_SHARE_URL: ${{ secrets.ONEDRIVE_SHARE_URL }}
         run: |
           set -euo pipefail
           mkdir -p assets download
 
-          # Extract the "personal/<user>" path and share token from the link
-          USER_PATH=$(echo "$ONEDRIVE_SHARE_URL" | sed -n 's#.*/personal/\([^/]*\)/.*#\1#p')
-          SHARE_TOKEN=$(echo "$ONEDRIVE_SHARE_URL" | sed -n 's#.*/personal/[^/]*/\([^?]*\).*#\1#p')
+          cat > download.js << 'EOF'
+          const { chromium } = require('playwright');
 
-          if [ -z "$USER_PATH" ] || [ -z "$SHARE_TOKEN" ]; then
-            echo "::error::Could not parse user path or share token from ONEDRIVE_SHARE_URL"
+          (async () => {
+            const browser = await chromium.launch();
+            const context = await browser.newContext({ acceptDownloads: true });
+            const page = await context.newPage();
+
+            const base = process.env.ONEDRIVE_SHARE_URL;
+            const url = base.includes('?') ? `${base}&download=1` : `${base}?download=1`;
+
+            console.log(`=== Navigating to: ${url} ===`);
+
+            let download;
+            try {
+              [download] = await Promise.all([
+                page.waitForEvent('download', { timeout: 120000 }),
+                page.goto(url, { waitUntil: 'commit' }).catch(() => {})
+              ]);
+            } catch (err) {
+              console.error('=== No download event fired within timeout ===');
+              const html = await page.content();
+              require('fs').writeFileSync('download/page-dump.html', html);
+              console.error('Page content saved to download/page-dump.html for inspection');
+              process.exit(1);
+            }
+
+            const suggested = download.suggestedFilename();
+            console.log(`=== Download triggered: ${suggested} ===`);
+            await download.saveAs(`download/${suggested}`);
+            console.log(`[OK] saved to download/${suggested}`);
+
+            await browser.close();
+          })();
+          EOF
+
+          node download.js
+
+          echo "=== What we got ==="
+          ls -lh download/
+
+          DOWNLOADED_FILE=$(find download -maxdepth 1 -type f ! -name 'page-dump.html' | head -n1)
+          if [ -z "$DOWNLOADED_FILE" ]; then
+            echo "::error::No file was downloaded. Check download/page-dump.html in the uploaded debug artifact."
             exit 1
           fi
 
-          DOWNLOAD_URL="https://$(echo "$ONEDRIVE_SHARE_URL" | awk -F/ '{print $3}')/personal/${USER_PATH}/_layouts/15/download.aspx?share=${SHARE_TOKEN}"
+          echo "=== Inspecting downloaded file ==="
+          file "$DOWNLOADED_FILE"
 
-          echo "=== Downloading folder as zip ==="
-          HTTP_CODE=$(curl -sSL -o download/folder.zip -w "%{http_code}" "$DOWNLOAD_URL")
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Anonymous download failed with HTTP ${HTTP_CODE} — link may be revoked, expired, or tenant blocks anonymous downloads."
+          echo "=== Extracting ==="
+          if unzip -l "$DOWNLOADED_FILE" > /dev/null 2>&1; then
+            unzip -o "$DOWNLOADED_FILE" -d extracted/
+          else
+            echo "::error::Downloaded file is not a valid zip. It may be an HTML error/sign-in page."
             exit 1
           fi
-          echo "[OK] folder.zip downloaded ($(du -h download/folder.zip | cut -f1))"
 
-          echo "=== Extracting archive ==="
-          unzip -o download/folder.zip -d download/extracted
+          echo "=== Files extracted ==="
+          find extracted -maxdepth 1 -type f -exec basename {} \;
 
-          echo "=== Files found ==="
-          find download/extracted -maxdepth 1 -type f -exec basename {} \;
-
+          echo "=== Moving expected smoke assets ==="
           for f in videos.tar.gz goldens-linux.tar.gz goldens-windows.tar.gz \
                    decoders-linux.tar.gz decoders-windows.tar.gz \
                    conf.tar.gz smoke-tests.tar.gz; do
-            if [ ! -f "download/extracted/$f" ]; then
+            if [ ! -f "extracted/$f" ]; then
               echo "::error::Expected file $f not found in downloaded folder"
               exit 1
             fi
-            mv "download/extracted/$f" "assets/$f"
+            mv "extracted/$f" "assets/$f"
           done
+
+          if [ ! -f "extracted/sanitizer_videos.tar.gz" ]; then
+            echo "::error::sanitizer_videos.tar.gz not found in downloaded folder"
+            exit 1
+          fi
+          mv "extracted/sanitizer_videos.tar.gz" sanitizer_videos.tar.gz
+
+          echo "=== Final assets ==="
+          ls -lh assets/
+          ls -lh sanitizer_videos.tar.gz
+
+      - name: "Upload debug page dump (on failure)"
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-page-dump
+          path: download/page-dump.html
+          retention-days: 1
+          if-no-files-found: ignore
 
       - name: "Upload smoke assets artifact"
         uses: actions/upload-artifact@v7
@@ -2902,12 +2968,6 @@ jobs:
           name: smoke-assets
           path: assets/*.tar.gz
           retention-days: 1
-
-      - name: "Move sanitizer video bundle"
-        run: |
-          set -euo pipefail
-          mv download/extracted/sanitizer_videos.tar.gz sanitizer_videos.tar.gz
-          echo "[OK] bundle ready: $(du -h sanitizer_videos.tar.gz)"
 
       - name: "Upload sanitizer video bundle artifact"
         uses: actions/upload-artifact@v7
