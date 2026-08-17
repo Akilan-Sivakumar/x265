@@ -1374,7 +1374,7 @@ jobs:
     name: "Test Linux (${{ matrix.category }})"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
-    needs: build-linux
+    needs: [build-linux, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -1432,18 +1432,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -1761,7 +1760,7 @@ jobs:
     name: "Test macOS (${{ matrix.category }})"
     runs-on: macos-latest
     timeout-minutes: 60
-    needs: build-macos
+    needs: [build-macos, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -1806,18 +1805,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -2120,7 +2118,7 @@ jobs:
     name: "Test AArch64 (${{ matrix.category }}, QEMU)"
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    needs: build-aarch64
+    needs: [build-aarch64, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -2185,18 +2183,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          wget -q --tries=3 --timeout=60 -O testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -2499,7 +2496,7 @@ jobs:
     name: "Test Windows (${{ matrix.category }})"
     runs-on: windows-latest
     timeout-minutes: 60
-    needs: build-windows
+    needs: [build-windows, prep-assets]
     strategy:
       fail-fast: false
       matrix:
@@ -2542,18 +2539,17 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=416x240:rate=30  -pix_fmt yuv420p12le testdata/test_12bit_416x240.yuv
           ffmpeg -y -f lavfi -i testsrc=duration=3:size=1920x1080:rate=25 -pix_fmt yuv420p    testdata/test_8bit_1080p.yuv
 
-      - name: Cache xiph.org test videos
-        id: cache-videos
-        uses: actions/cache@v5
+      - name: "Download xiph video bundle"
+        uses: actions/download-artifact@v8
         with:
-          path: testdata/xiph
-          key: xiph-test-videos-v1
-      - name: Download xiph test videos (cache miss only)
-        if: steps.cache-videos.outputs.cache-hit != 'true'
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph-download
+
+      - name: "Extract xiph videos"
         run: |
           mkdir -p testdata/xiph
-          curl -sSL --retry 3 --max-time 60 -o testdata/xiph/bus_cif.y4m   https://media.xiph.org/video/derf/y4m/bus_cif.y4m
-          curl -sSL --retry 3 --max-time 60 -o testdata/xiph/akiyo_cif.y4m https://media.xiph.org/video/derf/y4m/akiyo_cif.y4m
+          tar -xzf xiph-download/xiph_videos.tar.gz -C testdata/xiph
+          rm -rf xiph-download
 
       - name: Define helper
         run: |
@@ -2847,6 +2843,12 @@ jobs:
           path: summaries/*.log
           retention-days: 3
 
+  # NOTE: This step scrapes SharePoint's web UI (no auth) rather than
+  # calling the Graph API, to avoid needing Azure AD app credentials.
+  # If this step starts failing, SharePoint's UI likely changed —
+  # check the "debug-page-dump" artifact (HTML + screenshot) uploaded
+  # on failure to see what the page looked like, then update the
+  # `candidates` selector list in download.js accordingly.
   prep-assets:
     name: "Prepare Assets"
     runs-on: ubuntu-latest
@@ -2856,7 +2858,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: "Install Playwright"
         run: |
@@ -2979,9 +2981,16 @@ jobs:
           fi
           mv "$EXTRACT_ROOT/sanitizer_videos.tar.gz" sanitizer_videos.tar.gz
 
+          if [ ! -f "$EXTRACT_ROOT/xiph_videos.tar.gz" ]; then
+            echo "::error::xiph_videos.tar.gz not found in downloaded folder"
+            exit 1
+          fi
+          mv "$EXTRACT_ROOT/xiph_videos.tar.gz" xiph_videos.tar.gz
+
           echo "=== Final assets ==="
           ls -lh assets/
           ls -lh sanitizer_videos.tar.gz
+          ls -lh xiph_videos.tar.gz
 
       - name: "Upload debug page dump (on failure)"
         if: failure()
@@ -3010,11 +3019,19 @@ jobs:
           compression-level: 0
           overwrite: true
 
+      - name: "Upload xiph video bundle artifact"
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiph-videos-${{ github.run_id }}
+          path: xiph_videos.tar.gz
+          retention-days: 1
+          compression-level: 0
+          overwrite: true
+
   build-tsan:
     name: "Build TSAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3108,7 +3125,6 @@ jobs:
     name: "Build ASAN+UBSAN (${{ matrix.compiler }}, ${{ matrix.bitdepth }})"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3200,7 +3216,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     needs: [build-tsan, prep-assets]
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3326,7 +3341,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     needs: [build-asan, prep-assets]
-    if: github.event_name == 'pull_request_target'
     strategy:
       fail-fast: false
       matrix:
@@ -3803,6 +3817,8 @@ jobs:
       - test-macos
       - test-aarch64
       - test-windows
+      - test-tsan
+      - test-asan
     steps:
       - name: Download all summaries
         uses: actions/download-artifact@v8
