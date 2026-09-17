@@ -43,7 +43,8 @@
 #endif
 
 #ifdef __cplusplus
-namespace X265_NS {
+namespace X265_NS 
+{
 #endif
 
 static const char short_options[] = "o:D:P:p:f:F:r:I:i:b:s:t:q:m:hwV?";
