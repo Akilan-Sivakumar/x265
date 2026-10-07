@@ -1,0 +1,122 @@
+name: Min Toolchain Check
+
+# Verifies the C++17 build with the oldest and newest toolchains available on
+# GitHub-hosted runners: Apple Clang/Xcode (macOS) and MSVC (Windows).
+on:
+  push:
+    branches: [ci/min-toolchain-check]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    name: "macOS ${{ matrix.runner }} / ${{ matrix.xcode }} Xcode"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, macos-15, macos-15-intel]
+        xcode: [oldest, newest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          echo "Installed Xcode versions:"; ls -d /Applications/Xcode_*.app | grep -viE "beta|release_candidate|_rc" | sort -V
+          list=$(ls -d /Applications/Xcode_*.app | grep -viE "beta|release_candidate|_rc" | sort -V)
+          if [ "${{ matrix.xcode }}" = oldest ]; then X=$(echo "$list" | head -1); else X=$(echo "$list" | tail -1); fi
+          sudo xcode-select -s "$X/Contents/Developer"
+          xcodebuild -version
+          clang --version
+          sw_vers
+
+      - name: Install tools
+        run: |
+          brew install nasm ffmpeg
+          nasm -v; cmake --version | head -1; ffmpeg -version | head -1
+
+      - name: Build and test
+        run: BUILD=1 bash .github/scripts/min-toolchain-test.sh
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.runner }}-${{ matrix.xcode }}-xcode
+          path: |
+            build-*/cmake.log
+            build-*/make.log
+            out/*.log
+
+  windows:
+    name: "Windows ${{ matrix.runner }} / ${{ matrix.toolset }} MSVC"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022]
+        toolset: [oldest, newest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: |
+          choco install -y --no-progress nasm ffmpeg ninja
+          echo "C:/Program Files/NASM" >> $GITHUB_PATH
+
+      - name: Select MSVC toolset
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $tools = Get-ChildItem "$vs\VC\Tools\MSVC" -Directory | Sort-Object { [version]$_.Name }
+          Write-Host "Installed MSVC toolsets:"; $tools | ForEach-Object { Write-Host "  $($_.Name)" }
+          $pick = if ("${{ matrix.toolset }}" -eq "oldest") { $tools[0].Name } else { $tools[-1].Name }
+          Write-Host "Selected: $pick"
+          "VSINSTALL=$vs" | Out-File -Append $env:GITHUB_ENV
+          "VCVER=$pick"   | Out-File -Append $env:GITHUB_ENV
+
+      - name: Build 8/10/12-bit
+        shell: cmd
+        run: |
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 -vcvars_ver=%VCVER% || exit /b 1
+          cl 2>&1 | findstr /C:"Version"
+          nasm -v
+          for %%d in (8 10 12) do (
+            if %%d==8  set OPTS=
+            if %%d==10 set OPTS=-DHIGH_BIT_DEPTH=ON
+            if %%d==12 set OPTS=-DHIGH_BIT_DEPTH=ON -DMAIN12=ON
+            call :build %%d || exit /b 1
+          )
+          exit /b 0
+          :build
+          mkdir build-%1
+          cd build-%1
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_SHARED=OFF -DENABLE_HDR10_PLUS=ON %OPTS% ..\source > cmake.log 2>&1 || (type cmake.log & exit /b 1)
+          ninja > build.log 2>&1 || (type build.log & exit /b 1)
+          cd ..
+          exit /b 0
+
+      - name: Test
+        run: bash .github/scripts/min-toolchain-test.sh
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.runner }}-${{ matrix.toolset }}-msvc
+          path: |
+            build-*/cmake.log
+            build-*/build.log
+            out/*.log
