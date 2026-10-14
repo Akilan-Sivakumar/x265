@@ -11,7 +11,7 @@ if(POLICY CMP0042)
     cmake_policy(SET CMP0042 NEW) # MACOSX_RPATH
 endif()
 
-cmake_minimum_required (VERSION 2.8.8...3.10) # OBJECT libraries require 2.8.8
+cmake_minimum_required (VERSION 3.10) # CMAKE_CXX_STANDARD 17 needs 3.8; MSVC /std:c++17 needs 3.10
 
 if (POLICY CMP0075)
     cmake_policy(SET CMP0075 NEW) # CMAKE_REQUIRED_LIBRARIES warning
@@ -19,6 +19,12 @@ endif()
 
 
 project (x265)
+
+# Language standard: x265 is built as C++17
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 include(CheckIncludeFiles)
 include(CheckFunctionExists)
 include(CheckSymbolExists)
@@ -249,10 +255,9 @@ if(MSVC)
     # disable Microsofts suggestions for proprietary secure APIs
     add_definitions(/D_CRT_SECURE_NO_WARNINGS)
 
-    if(MSVC_VERSION LESS 1911)
-        message(FATAL_ERROR "Visual Studio 2017 (15.3) or newer is required to build x265 with C++17")
+    if(MSVC_VERSION LESS 1914)
+        message(FATAL_ERROR "Visual Studio 2017 15.7 (MSVC 19.14) or newer is required to build x265 with C++17")
     endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
 
     check_include_files(stdint.h HAVE_STDINT_H)
     if(NOT HAVE_STDINT_H)
@@ -301,7 +306,6 @@ if(GCC)
             message(FATAL_ERROR "gcc version above 4.8 required to support hdr10plus")
         endif()
     endif()
-    add_definitions(-std=gnu++17)
     if(ENABLE_PIC)
          add_definitions(-fPIC)
     endif(ENABLE_PIC)
